@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eventra.dev/schemas/event.json",
+  "title": "Eventra Event",
+  "type": "object",
+  "required": ["event_id", "customer_id", "event_type", "ts", "payload", "source"],
+  "properties": {
+    "event_id": { "type": "string" },
+    "customer_id": { "type": "string" },
+    "event_type": { "type": "string" },
+    "ts": { "type": "string", "format": "date-time" },
+    "payload": { "type": "object", "additionalProperties": true },
+    "source": { "type": "string" }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,16 @@
+{
+  "name": "eventra",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "services/*"
+  ],
+  "scripts": {
+    "dev:api": "npm --workspace @eventra/api run dev",
+    "dev:rule-engine": "npm --workspace @eventra/rule-engine run dev",
+    "dev:frontend": "npm --workspace @eventra/frontend run dev",
+    "start:api": "npm --workspace @eventra/api run start",
+    "start:rule-engine": "npm --workspace @eventra/rule-engine run start"
+  }
+}

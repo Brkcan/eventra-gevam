@@ -1,0 +1,385 @@
+:root {
+  color-scheme: light;
+  font-family: "Space Grotesk", "Segoe UI", sans-serif;
+  --bg-warm: #f3e8d8;
+  --bg-soft: #f8f4ec;
+  --panel: rgba(255, 252, 245, 0.86);
+  --line: #d7c9b0;
+  --text: #1f1a13;
+  --muted: #6f5b42;
+  --accent: #cc6517;
+  --accent-strong: #b95710;
+  --danger: #b64031;
+  --radius: 12px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(255, 188, 117, 0.22), transparent 36%),
+    radial-gradient(circle at 88% 18%, rgba(178, 106, 48, 0.14), transparent 40%),
+    linear-gradient(145deg, var(--bg-warm), var(--bg-soft) 55%, #efe5d4);
+  color: var(--text);
+}
+
+.page {
+  height: 100vh;
+  display: grid;
+  grid-template-rows: auto auto auto auto auto 1fr;
+}
+
+.topbar {
+  padding: 14px 20px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(90deg, rgba(255, 252, 245, 0.96), rgba(255, 246, 229, 0.92));
+  backdrop-filter: blur(6px);
+  box-shadow: 0 8px 20px -18px rgba(76, 40, 12, 0.55);
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 23px;
+  letter-spacing: 0.4px;
+}
+
+.topbar span {
+  font-size: 12px;
+  font-weight: 700;
+  color: #7a5834;
+  padding: 4px 10px;
+  border: 1px solid #d6bd99;
+  border-radius: 999px;
+  background: rgba(255, 236, 210, 0.8);
+}
+
+.controlsBar {
+  display: grid;
+  grid-template-columns: 2fr 2fr 100px 2fr 140px auto;
+  gap: 10px;
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  animation: fadeSlide 220ms ease;
+}
+
+.controlsBar label,
+.panelFields label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: #5b4a33;
+  font-weight: 600;
+}
+
+.panelFields label button {
+  justify-self: start;
+}
+
+.controlsBar input,
+.controlsBar select,
+.panelFields input,
+.panelFields select,
+.panelFields textarea {
+  width: 100%;
+  border: 1px solid #ccb38e;
+  background: #fffdf8;
+  border-radius: 10px;
+  padding: 9px;
+  font-size: 14px;
+  transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+
+.controlsBar input:focus,
+.controlsBar select:focus,
+.panelFields input:focus,
+.panelFields select:focus,
+.panelFields textarea:focus,
+.listBar input:focus,
+.listBar select:focus {
+  border-color: #ce7d3d;
+  box-shadow: 0 0 0 3px rgba(206, 125, 61, 0.14);
+  outline: none;
+  background: #fffefb;
+}
+
+.panelFields textarea {
+  min-height: 82px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+  line-height: 1.35;
+}
+
+.actions {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+button {
+  border: 1px solid #c7ad87;
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: linear-gradient(180deg, #faefdf, #f3e3cb);
+  cursor: pointer;
+  font-weight: 600;
+  color: #4f3b21;
+  transition: transform 130ms ease, box-shadow 130ms ease, border-color 130ms ease;
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: #b99667;
+  box-shadow: 0 8px 14px -12px rgba(48, 30, 8, 0.9);
+}
+
+button.primary {
+  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+  border-color: var(--accent-strong);
+  color: #fff;
+}
+
+button.danger {
+  background: linear-gradient(180deg, #bf4a3c, var(--danger));
+  border-color: #9a3428;
+  color: #fff;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.statusBar {
+  padding: 9px 12px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--line);
+  border-left: 4px solid #d07a34;
+  background: rgba(255, 252, 245, 0.8);
+  color: #5b4328;
+  font-weight: 500;
+}
+
+.builderBar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 250, 241, 0.82);
+}
+
+.listBar {
+  display: grid;
+  grid-template-columns: 2fr 180px 120px auto;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 248, 236, 0.8);
+  animation: fadeSlide 220ms ease;
+}
+
+.listBar label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: #5b4a33;
+}
+
+.listBar input,
+.listBar select {
+  width: 100%;
+  border: 1px solid #ccb38e;
+  background: #fffdf8;
+  border-radius: 10px;
+  padding: 8px;
+  font-size: 13px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.pager {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+}
+
+.pager span {
+  font-size: 12px;
+  color: #6f5b42;
+  min-width: 95px;
+  text-align: center;
+}
+
+.builderBar span {
+  font-size: 12px;
+  color: #6f5b42;
+  font-weight: 600;
+}
+
+.dragHint {
+  margin-left: 6px;
+}
+
+.workspace {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 12px;
+  padding: 12px;
+}
+
+.canvas {
+  min-width: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(255, 230, 198, 0.46), transparent 50%),
+    linear-gradient(160deg, rgba(255, 252, 246, 0.96), rgba(252, 245, 231, 0.94));
+  box-shadow:
+    0 20px 30px -28px rgba(76, 40, 12, 0.5),
+    0 2px 0 rgba(255, 255, 255, 0.7) inset;
+}
+
+.canvas .react-flow {
+  background: transparent;
+}
+
+.canvas .react-flow__node {
+  border-radius: 12px;
+  border: 1px solid #d4b088;
+  background: linear-gradient(160deg, #fffaf2, #f7ebd8);
+  color: #412d17;
+  font-weight: 700;
+  box-shadow: 0 9px 14px -12px rgba(65, 40, 17, 0.75);
+  min-width: 170px;
+}
+
+.canvas .react-flow__node.selected,
+.canvas .react-flow__node:focus {
+  border-color: #cd7b35;
+  box-shadow:
+    0 0 0 3px rgba(205, 123, 53, 0.18),
+    0 9px 14px -12px rgba(65, 40, 17, 0.75);
+}
+
+.canvas .react-flow__handle {
+  width: 9px;
+  height: 9px;
+  border: 1px solid #f5e2c8;
+  background: #b96622;
+}
+
+.canvas .react-flow__edge-path {
+  stroke: #b37b45;
+  stroke-width: 2.1;
+}
+
+.canvas .react-flow__edge.selected .react-flow__edge-path {
+  stroke: #c24f3d;
+}
+
+.canvas .react-flow__controls,
+.canvas .react-flow__minimap {
+  border: 1px solid #d9be9b;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 10px 18px -16px rgba(76, 40, 12, 0.7);
+}
+
+.sidePanel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 251, 243, 0.9);
+  padding: 12px;
+  overflow: auto;
+  box-shadow:
+    0 18px 24px -24px rgba(76, 40, 12, 0.6),
+    0 1px 0 rgba(255, 255, 255, 0.8) inset;
+}
+
+.sidePanel h2 {
+  margin-top: 0;
+  margin-bottom: 12px;
+  font-size: 16px;
+}
+
+.panelFields {
+  display: grid;
+  gap: 10px;
+}
+
+.panelHint {
+  margin: 0;
+  color: #7d6547;
+  font-size: 13px;
+}
+
+.fieldHelp {
+  color: #7d6547;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.fieldHelp code {
+  font-size: 11px;
+}
+
+.fieldError {
+  color: #a22c2c;
+  font-size: 11px;
+}
+
+.fieldSuccess {
+  color: #2f6f41;
+  font-size: 11px;
+}
+
+@keyframes fadeSlide {
+  from {
+    opacity: 0.75;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 1000px) {
+  .controlsBar {
+    grid-template-columns: 1fr;
+  }
+
+  .actions {
+    align-items: center;
+  }
+
+  .workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(360px, 1fr) auto;
+    padding: 8px;
+  }
+
+  .listBar {
+    grid-template-columns: 1fr;
+  }
+
+  .pager {
+    align-items: center;
+  }
+
+  .sidePanel {
+    border-top: 1px solid #d7c9b0;
+  }
+}

@@ -1,0 +1,73 @@
+services:
+  kafka:
+    restart: unless-stopped
+    ports: []
+    environment:
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+
+  redis:
+    restart: unless-stopped
+    ports: []
+
+  postgres:
+    restart: unless-stopped
+    ports: []
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file:
+      - .env.prod
+    restart: unless-stopped
+    depends_on:
+      - kafka
+      - redis
+      - postgres
+
+  rule-engine:
+    build:
+      context: .
+      dockerfile: services/rule-engine/Dockerfile
+    env_file:
+      - .env.prod
+    restart: unless-stopped
+    depends_on:
+      - kafka
+      - postgres
+
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+      args:
+        VITE_API_BASE_URL: https://${API_DOMAIN}
+    restart: unless-stopped
+    depends_on:
+      - api
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - APP_DOMAIN=${APP_DOMAIN}
+      - API_DOMAIN=${API_DOMAIN}
+      - ACME_EMAIL=${ACME_EMAIL}
+    volumes:
+      - ./infra/prod/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - api
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
