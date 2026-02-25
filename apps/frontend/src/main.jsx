@@ -214,6 +214,8 @@ function App() {
   const [manualQueueLoading, setManualQueueLoading] = useState(false);
   const [manualReleaseCount, setManualReleaseCount] = useState(10);
   const [manualWaitNodeId, setManualWaitNodeId] = useState('');
+  const [dashboardKpi, setDashboardKpi] = useState(null);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
   const [selectedJourneyKey, setSelectedJourneyKey] = useState('');
   const [draggedJourneyKey, setDraggedJourneyKey] = useState('');
   const [activeDropFolder, setActiveDropFolder] = useState('');
@@ -594,6 +596,23 @@ function App() {
       setManualQueueLoading(false);
     }
   }, [fetchManualQueue, journeyId, manualReleaseCount, manualWaitNodeId, version]);
+
+  const fetchDashboardKpi = useCallback(async () => {
+    setDashboardLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/dashboard/kpi`);
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.message || `Dashboard KPI failed: ${response.status}`);
+      }
+      const body = await response.json();
+      setDashboardKpi(body.item || null);
+    } catch (error) {
+      setStatusText(`Dashboard KPI hatasi: ${error.message}`);
+    } finally {
+      setDashboardLoading(false);
+    }
+  }, []);
 
   const toggleJourneyLogs = useCallback(async () => {
     if (showJourneyLogs) {
@@ -993,6 +1012,13 @@ function App() {
   }, [allFolders, selectedFolder]);
 
   useEffect(() => {
+    if (activeMenu !== 'Dashboards') {
+      return;
+    }
+    fetchDashboardKpi();
+  }, [activeMenu, fetchDashboardKpi]);
+
+  useEffect(() => {
     setJourneyLogs([]);
     setJourneyLogsWindowLabel('Henuz yuklenmedi');
     setManualQueueItems([]);
@@ -1038,7 +1064,7 @@ function App() {
       </aside>
 
       <div className="page">
-      {viewMode === 'designer' && (
+      {activeMenu !== 'Dashboards' && viewMode === 'designer' && (
       <>
       <section className="designerTop">
         <div className="designerTitle">
@@ -1632,7 +1658,7 @@ function App() {
       </>
       )}
 
-      {viewMode === 'library' && (
+      {activeMenu !== 'Dashboards' && viewMode === 'library' && (
         <main className="libraryWorkspace">
           <section className="libraryToolbar">
             <button type="button" className="primary" onClick={newJourney}>
@@ -1726,7 +1752,48 @@ function App() {
           <div className="statusBar">{statusText}</div>
         </main>
       )}
-      {viewMode !== 'library' && <div className="statusBar">{statusText}</div>}
+      {activeMenu === 'Dashboards' && (
+        <main className="dashboardWorkspace">
+          <section className="dashboardHeader">
+            <h2>Genel Durum KPI</h2>
+            <button type="button" onClick={fetchDashboardKpi} disabled={dashboardLoading}>
+              {dashboardLoading ? 'Yukleniyor...' : 'Yenile'}
+            </button>
+          </section>
+          <section className="dashboardGrid">
+            <article className="kpiCard">
+              <h3>Event Sayisi</h3>
+              <div className="kpiValue">{dashboardKpi?.events_1h ?? 0}</div>
+              <small>Son 1 saat</small>
+              <div className="kpiSub">24s: {dashboardKpi?.events_24h ?? 0}</div>
+            </article>
+            <article className="kpiCard">
+              <h3>Aktif Instance</h3>
+              <div className="kpiValue">{dashboardKpi?.active_instances?.total ?? 0}</div>
+              <small>waiting + waiting_manual + processing</small>
+              <div className="kpiSub">
+                w:{dashboardKpi?.active_instances?.waiting ?? 0} | wm:{dashboardKpi?.active_instances?.waiting_manual ?? 0} | p:{dashboardKpi?.active_instances?.processing ?? 0}
+              </div>
+            </article>
+            <article className="kpiCard">
+              <h3>Tamamlanan Journey</h3>
+              <div className="kpiValue">{dashboardKpi?.completed_journeys_24h ?? 0}</div>
+              <small>Son 24 saat completed instance</small>
+            </article>
+            <article className="kpiCard">
+              <h3>Action Orani (24s)</h3>
+              <div className="kpiValue">{dashboardKpi?.actions_24h?.success_rate_pct ?? 0}%</div>
+              <small>Basarili oran</small>
+              <div className="kpiSub">
+                fail: {dashboardKpi?.actions_24h?.failure_rate_pct ?? 0}% | ok:{' '}
+                {dashboardKpi?.actions_24h?.success ?? 0} / fail:{' '}
+                {dashboardKpi?.actions_24h?.failed ?? 0}
+              </div>
+            </article>
+          </section>
+        </main>
+      )}
+      {(activeMenu === 'Dashboards' || viewMode !== 'library') && <div className="statusBar">{statusText}</div>}
       </div>
     </div>
   );

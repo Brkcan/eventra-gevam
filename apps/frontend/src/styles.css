@@ -487,6 +487,65 @@ button:disabled {
   gap: 14px;
 }
 
+.dashboardWorkspace {
+  padding: 14px;
+  overflow: auto;
+  display: grid;
+  gap: 12px;
+}
+
+.dashboardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 251, 243, 0.9);
+}
+
+.dashboardHeader h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.dashboardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.kpiCard {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, #fffaf2, #f7ebd8);
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.kpiCard h3 {
+  margin: 0;
+  font-size: 14px;
+  color: #5e4528;
+}
+
+.kpiValue {
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1;
+  color: #3f2b17;
+}
+
+.kpiCard small {
+  color: #7d6547;
+}
+
+.kpiSub {
+  font-size: 12px;
+  color: #6e5639;
+}
+
 .libraryToolbar {
   display: flex;
   gap: 10px;

@@ -440,6 +440,72 @@ app.get('/health', async (_req, res) => {
   }
 });
 
+app.get('/dashboard/kpi', async (_req, res) => {
+  try {
+    const [eventsResult, activeResult, completedResult, actionResult] = await Promise.all([
+      pgClient.query(
+        `select
+           count(*) filter (where ts >= now() - interval '1 hour')::int as events_1h,
+           count(*) filter (where ts >= now() - interval '24 hour')::int as events_24h
+         from events`
+      ),
+      pgClient.query(
+        `select state, count(*)::int as cnt
+         from journey_instances
+         where state in ('waiting', 'waiting_manual', 'processing')
+         group by state`
+      ),
+      pgClient.query(
+        `select count(*)::int as completed_24h
+         from journey_instances
+         where state = 'completed'
+           and completed_at >= now() - interval '24 hour'`
+      ),
+      pgClient.query(
+        `select
+           count(*) filter (where status = 'failed')::int as failed_24h,
+           count(*) filter (where status <> 'failed')::int as success_24h
+         from action_log
+         where created_at >= now() - interval '24 hour'`
+      )
+    ]);
+
+    const activeByState = { waiting: 0, waiting_manual: 0, processing: 0 };
+    for (const row of activeResult.rows) {
+      activeByState[row.state] = Number(row.cnt || 0);
+    }
+    const activeTotal = activeByState.waiting + activeByState.waiting_manual + activeByState.processing;
+
+    const success24h = Number(actionResult.rows[0]?.success_24h || 0);
+    const failed24h = Number(actionResult.rows[0]?.failed_24h || 0);
+    const actionTotal24h = success24h + failed24h;
+    const successRate24h = actionTotal24h > 0 ? Number(((success24h / actionTotal24h) * 100).toFixed(2)) : 0;
+    const failureRate24h = actionTotal24h > 0 ? Number(((failed24h / actionTotal24h) * 100).toFixed(2)) : 0;
+
+    res.status(200).json({
+      status: 'ok',
+      item: {
+        events_1h: Number(eventsResult.rows[0]?.events_1h || 0),
+        events_24h: Number(eventsResult.rows[0]?.events_24h || 0),
+        active_instances: {
+          ...activeByState,
+          total: activeTotal
+        },
+        completed_journeys_24h: Number(completedResult.rows[0]?.completed_24h || 0),
+        actions_24h: {
+          success: success24h,
+          failed: failed24h,
+          total: actionTotal24h,
+          success_rate_pct: successRate24h,
+          failure_rate_pct: failureRate24h
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
 app.post('/ingest', async (req, res) => {
   try {
     const event = normalizeEvent(req.body);
