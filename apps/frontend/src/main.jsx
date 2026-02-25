@@ -38,6 +38,7 @@ function normalizeNodeData(data = {}, fallbackId = '') {
     node_kind: nodeKind,
     event_type: data.event_type || 'cart_add',
     wait_minutes: Number(data.wait_minutes || 30),
+    manual_release: Boolean(data.manual_release),
     http_method: data.http_method || 'POST',
     http_url: data.http_url || '',
     http_headers_json: data.http_headers_json || '{}',
@@ -68,6 +69,17 @@ function parseJsonText(raw) {
   } catch (error) {
     return { ok: false, message: error.message };
   }
+}
+
+function formatLogDate(iso) {
+  if (!iso) {
+    return '-';
+  }
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return String(iso);
+  }
+  return date.toLocaleString('tr-TR');
 }
 
 function createNode(nodeKind, position, id) {
@@ -193,6 +205,15 @@ function App() {
   const [viewMode, setViewMode] = useState('library');
   const [showJourneyMeta, setShowJourneyMeta] = useState(false);
   const [showInspector, setShowInspector] = useState(false);
+  const [showJourneyLogs, setShowJourneyLogs] = useState(false);
+  const [showManualQueue, setShowManualQueue] = useState(false);
+  const [journeyLogs, setJourneyLogs] = useState([]);
+  const [journeyLogsLoading, setJourneyLogsLoading] = useState(false);
+  const [journeyLogsWindowLabel, setJourneyLogsWindowLabel] = useState('Henuz yuklenmedi');
+  const [manualQueueItems, setManualQueueItems] = useState([]);
+  const [manualQueueLoading, setManualQueueLoading] = useState(false);
+  const [manualReleaseCount, setManualReleaseCount] = useState(10);
+  const [manualWaitNodeId, setManualWaitNodeId] = useState('');
   const [selectedJourneyKey, setSelectedJourneyKey] = useState('');
   const [draggedJourneyKey, setDraggedJourneyKey] = useState('');
   const [activeDropFolder, setActiveDropFolder] = useState('');
@@ -210,6 +231,14 @@ function App() {
     () =>
       journeyItems.find((item) => `${item.journey_id}::${item.version}` === selectedJourneyKey) || null,
     [journeyItems, selectedJourneyKey]
+  );
+  const waitNodes = useMemo(
+    () =>
+      nodes.filter((node) => {
+        const kind = node?.data?.node_kind || node?.type;
+        return kind === 'wait';
+      }),
+    [nodes]
   );
 
   const journeysInSelectedFolder = useMemo(
@@ -461,6 +490,110 @@ function App() {
     setFolderItems(merged);
     return merged;
   }, []);
+
+  const fetchJourneyLogs = useCallback(async () => {
+    if (!journeyId) {
+      setJourneyLogs([]);
+      return;
+    }
+    setJourneyLogsLoading(true);
+    try {
+      const params = new URLSearchParams({
+        journey_id: journeyId,
+        limit: '200',
+        offset: '0'
+      });
+      const response = await fetch(
+        `${API_BASE_URL}/journey-instance-transitions?${params.toString()}`
+      );
+      if (!response.ok) {
+        throw new Error(`Journey logs failed: ${response.status}`);
+      }
+      const body = await response.json();
+      const items = Array.isArray(body.items) ? body.items : [];
+      const oneHourAgo = Date.now() - 60 * 60 * 1000;
+      const filtered = items.filter((item) => {
+        if (Number(item.journey_version) !== Number(version)) {
+          return false;
+        }
+        const createdMs = new Date(item.created_at).getTime();
+        if (Number.isNaN(createdMs)) {
+          return false;
+        }
+        return createdMs >= oneHourAgo;
+      });
+      setJourneyLogs(filtered);
+      setJourneyLogsWindowLabel('Son 1 saat');
+    } catch (error) {
+      setStatusText(`Journey log hatasi: ${error.message}`);
+    } finally {
+      setJourneyLogsLoading(false);
+    }
+  }, [journeyId, version]);
+
+  const fetchManualQueue = useCallback(async () => {
+    if (!journeyId || !manualWaitNodeId) {
+      setManualQueueItems([]);
+      return;
+    }
+    setManualQueueLoading(true);
+    try {
+      const params = new URLSearchParams({
+        journey_id: journeyId,
+        version: String(version),
+        wait_node_id: manualWaitNodeId,
+        limit: '500',
+        offset: '0'
+      });
+      const response = await fetch(`${API_BASE_URL}/manual-wait-queue?${params.toString()}`);
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.message || `Manual queue failed: ${response.status}`);
+      }
+      const body = await response.json();
+      setManualQueueItems(Array.isArray(body.items) ? body.items : []);
+      setStatusText(
+        `Manual queue yuklendi: ${manualWaitNodeId} icin ${(body.items || []).length} kayit.`
+      );
+    } catch (error) {
+      setStatusText(`Manual queue hatasi: ${error.message}`);
+    } finally {
+      setManualQueueLoading(false);
+    }
+  }, [journeyId, manualWaitNodeId, version]);
+
+  const releaseManualQueue = useCallback(async () => {
+    if (!journeyId || !manualWaitNodeId) {
+      setStatusText('Release icin journey ve wait node secilmeli.');
+      return;
+    }
+    try {
+      setManualQueueLoading(true);
+      const response = await fetch(`${API_BASE_URL}/manual-wait-release`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          journey_id: journeyId,
+          version: Number(version),
+          wait_node_id: manualWaitNodeId,
+          count: Math.max(1, Number(manualReleaseCount) || 1),
+          released_by: 'ui'
+        })
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body.message || `Release failed: ${response.status}`);
+      }
+      setStatusText(
+        `Manual release tamamlandi: ${body.released_count || 0} customer waiting state'e alindi.`
+      );
+      await fetchManualQueue();
+    } catch (error) {
+      setStatusText(`Manual release hatasi: ${error.message}`);
+    } finally {
+      setManualQueueLoading(false);
+    }
+  }, [fetchManualQueue, journeyId, manualReleaseCount, manualWaitNodeId, version]);
 
   const saveJourney = useCallback(async (statusOverride = null) => {
     setBusy(true);
@@ -850,6 +983,23 @@ function App() {
     }
   }, [allFolders, selectedFolder]);
 
+  useEffect(() => {
+    setJourneyLogs([]);
+    setJourneyLogsWindowLabel('Henuz yuklenmedi');
+    setManualQueueItems([]);
+  }, [journeyId, version]);
+
+  useEffect(() => {
+    if (waitNodes.length === 0) {
+      setManualWaitNodeId('');
+      setManualQueueItems([]);
+      return;
+    }
+    if (!manualWaitNodeId || !waitNodes.some((node) => node.id === manualWaitNodeId)) {
+      setManualWaitNodeId(waitNodes[0].id);
+    }
+  }, [manualWaitNodeId, waitNodes]);
+
   const selectedData = selectedNode ? normalizeNodeData(selectedNode.data, selectedNode.id) : null;
   const headersValidation =
     selectedData?.node_kind === 'http_call'
@@ -879,27 +1029,6 @@ function App() {
       </aside>
 
       <div className="page">
-      <header className="topbar">
-        <h1>Eventra Journey Designer</h1>
-        <div className="topActions">
-          <button
-            type="button"
-            className={viewMode === 'library' ? 'primary' : ''}
-            onClick={() => setViewMode('library')}
-          >
-            Library
-          </button>
-          <button
-            type="button"
-            className={viewMode === 'designer' ? 'primary' : ''}
-            onClick={() => setViewMode('designer')}
-          >
-            Designer
-          </button>
-          <span>MVP v0.3</span>
-        </div>
-      </header>
-
       {viewMode === 'designer' && (
       <>
       <section className="designerTop">
@@ -924,6 +1053,27 @@ function App() {
             disabled={busy}
           >
             {showInspector ? 'Hide Inspector' : 'Inspector'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowJourneyLogs((prev) => !prev)}
+            disabled={busy}
+          >
+            {showJourneyLogs ? 'Hide Logs' : 'Show Logs'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowManualQueue((prev) => !prev)}
+            disabled={busy}
+          >
+            {showManualQueue ? 'Hide Manual Queue' : 'Manual Queue'}
+          </button>
+          <button
+            type="button"
+            onClick={fetchJourneyLogs}
+            disabled={busy || journeyLogsLoading}
+          >
+            {journeyLogsLoading ? 'Loading Logs...' : 'Load Last 1h Logs'}
           </button>
           <button type="button" onClick={newJourney} disabled={busy}>
             New
@@ -1082,17 +1232,27 @@ function App() {
               )}
 
               {selectedData.node_kind === 'wait' && (
-                <label>
-                  wait_minutes
-                  <input
-                    type="number"
-                    min="1"
-                    value={selectedData.wait_minutes}
-                    onChange={(e) =>
-                      updateSelectedNode({ wait_minutes: Math.max(1, Number(e.target.value) || 1) })
-                    }
-                  />
-                </label>
+                <>
+                  <label>
+                    wait_minutes
+                    <input
+                      type="number"
+                      min="1"
+                      value={selectedData.wait_minutes}
+                      onChange={(e) =>
+                        updateSelectedNode({ wait_minutes: Math.max(1, Number(e.target.value) || 1) })
+                      }
+                    />
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(selectedData.manual_release)}
+                      onChange={(e) => updateSelectedNode({ manual_release: e.target.checked })}
+                    />
+                    manual_release (otomatik gecmesin)
+                  </label>
+                </>
               )}
 
               {selectedData.node_kind === 'http_call' && (
@@ -1345,6 +1505,131 @@ function App() {
         </aside>
         )}
       </main>
+      {showJourneyLogs && (
+      <section className="journeyLogsPanel">
+        <div className="journeyLogsHead">
+          <h3>Journey Event Log</h3>
+          <span>{journeyId} v{version} | {journeyLogsWindowLabel}</span>
+        </div>
+        <div className="journeyLogsTableWrap">
+          <table className="journeyLogsTable">
+            <thead>
+              <tr>
+                <th>Musteri Numarasi</th>
+                <th>Log Tarihi</th>
+                <th>Onceki State</th>
+                <th>Mevcut State</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {journeyLogsLoading && (
+                <tr>
+                  <td colSpan={5}>Yukleniyor...</td>
+                </tr>
+              )}
+              {!journeyLogsLoading && journeyLogs.length === 0 && (
+                <tr>
+                  <td colSpan={5}>Bu journey icin log bulunamadi.</td>
+                </tr>
+              )}
+              {!journeyLogsLoading &&
+                journeyLogs.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.customer_id}</td>
+                    <td>{formatLogDate(item.created_at)}</td>
+                    <td>{item.from_state || '-'}</td>
+                    <td>{item.to_state}</td>
+                    <td>{item.reason || '-'}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      )}
+      {showManualQueue && (
+      <section className="journeyLogsPanel">
+        <div className="journeyLogsHead">
+          <h3>Manual Wait Queue</h3>
+          <span>{journeyId} v{version}</span>
+        </div>
+        <div className="manualQueueToolbar">
+          <label>
+            Wait Node
+            <select
+              value={manualWaitNodeId}
+              onChange={(e) => setManualWaitNodeId(e.target.value)}
+            >
+              {waitNodes.map((node) => (
+                <option key={node.id} value={node.id}>
+                  {node.id}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Release Count
+            <input
+              type="number"
+              min="1"
+              value={manualReleaseCount}
+              onChange={(e) => setManualReleaseCount(Math.max(1, Number(e.target.value) || 1))}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={fetchManualQueue}
+            disabled={manualQueueLoading || !manualWaitNodeId}
+          >
+            {manualQueueLoading ? 'Loading...' : 'Load Queue'}
+          </button>
+          <button
+            type="button"
+            className="primary"
+            onClick={releaseManualQueue}
+            disabled={manualQueueLoading || !manualWaitNodeId}
+          >
+            Release N
+          </button>
+        </div>
+        <div className="journeyLogsTableWrap">
+          <table className="journeyLogsTable">
+            <thead>
+              <tr>
+                <th>Instance</th>
+                <th>Musteri</th>
+                <th>State</th>
+                <th>Started At</th>
+                <th>Updated At</th>
+              </tr>
+            </thead>
+            <tbody>
+              {manualQueueLoading && (
+                <tr>
+                  <td colSpan={5}>Yukleniyor...</td>
+                </tr>
+              )}
+              {!manualQueueLoading && manualQueueItems.length === 0 && (
+                <tr>
+                  <td colSpan={5}>Manual queue bos.</td>
+                </tr>
+              )}
+              {!manualQueueLoading &&
+                manualQueueItems.map((item) => (
+                  <tr key={item.instance_id}>
+                    <td>{item.instance_id}</td>
+                    <td>{item.customer_id}</td>
+                    <td>{item.state}</td>
+                    <td>{formatLogDate(item.started_at)}</td>
+                    <td>{formatLogDate(item.updated_at)}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      )}
       </>
       )}
 

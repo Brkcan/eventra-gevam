@@ -56,6 +56,14 @@ const CustomerCreateSchema = z.object({
   attributes: z.record(z.any()).default({})
 });
 
+const ManualWaitReleaseSchema = z.object({
+  journey_id: z.string().min(1),
+  version: z.number().int().positive().optional(),
+  wait_node_id: z.string().min(1).optional(),
+  count: z.number().int().positive().max(10000).default(10),
+  released_by: z.string().min(1).optional()
+});
+
 const kafka = new Kafka({ clientId: kafkaClientId, brokers: kafkaBrokers });
 const admin = kafka.admin();
 const producer = kafka.producer({
@@ -74,6 +82,63 @@ function parseOffset(value) {
   const n = Number(value ?? 0);
   if (!Number.isFinite(n) || n < 0) return 0;
   return Math.floor(n);
+}
+
+async function resolveJourneyVersion(journeyId, versionRaw) {
+  if (versionRaw !== undefined && versionRaw !== null && String(versionRaw).trim() !== '') {
+    const parsed = Number(versionRaw);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      throw new Error('invalid version');
+    }
+    return parsed;
+  }
+
+  const latest = await pgClient.query(
+    `select version
+     from journeys
+     where journey_id = $1
+     order by version desc
+     limit 1`,
+    [journeyId]
+  );
+  if (latest.rowCount === 0) {
+    throw new Error('journey not found');
+  }
+  return Number(latest.rows[0].version);
+}
+
+async function resolveWaitNodeId(journeyId, version, waitNodeIdRaw) {
+  const journey = await pgClient.query(
+    `select graph_json
+     from journeys
+     where journey_id = $1 and version = $2
+     limit 1`,
+    [journeyId, version]
+  );
+  if (journey.rowCount === 0) {
+    throw new Error('journey version not found');
+  }
+
+  const nodes = Array.isArray(journey.rows[0]?.graph_json?.nodes) ? journey.rows[0].graph_json.nodes : [];
+  const waitNodes = nodes.filter((node) => {
+    const nodeKind = node?.data?.node_kind || node?.type;
+    return nodeKind === 'wait';
+  });
+
+  if (waitNodes.length === 0) {
+    throw new Error('wait node not found');
+  }
+
+  if (waitNodeIdRaw) {
+    const matched = waitNodes.find((node) => String(node?.id) === String(waitNodeIdRaw));
+    if (!matched) {
+      throw new Error('wait_node_id not found in journey');
+    }
+    return String(matched.id);
+  }
+
+  const firstManual = waitNodes.find((node) => Boolean(node?.data?.manual_release));
+  return String(firstManual?.id || waitNodes[0].id);
 }
 
 async function ensureKafkaTopics() {
@@ -228,9 +293,12 @@ async function ensureSchema() {
   `);
 
   await pgClient.query(`
-    create unique index if not exists uq_journey_instance_active
+    drop index if exists uq_journey_instance_active
+  `);
+  await pgClient.query(`
+    create unique index uq_journey_instance_active
       on journey_instances (journey_id, customer_id)
-      where state in ('waiting', 'active', 'processing')
+      where state in ('waiting', 'waiting_manual', 'active', 'processing')
   `);
 
   await pgClient.query(`
@@ -1055,6 +1123,135 @@ app.get('/journey-instance-transitions', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
+app.get('/manual-wait-queue', async (req, res) => {
+  try {
+    const journeyId = req.query.journey_id?.toString();
+    if (!journeyId) {
+      res.status(400).json({ status: 'error', message: 'journey_id is required' });
+      return;
+    }
+    const version = await resolveJourneyVersion(journeyId, req.query.version?.toString());
+    const waitNodeId = await resolveWaitNodeId(journeyId, version, req.query.wait_node_id?.toString());
+    const limit = parseLimit(req.query.limit, 200, 1000);
+    const offset = parseOffset(req.query.offset);
+
+    const countResult = await pgClient.query(
+      `select count(*)::int as total
+       from journey_instances
+       where journey_id = $1
+         and journey_version = $2
+         and state = 'waiting_manual'
+         and current_node = $3`,
+      [journeyId, version, waitNodeId]
+    );
+    const total = countResult.rows[0]?.total || 0;
+
+    const result = await pgClient.query(
+      `select instance_id, customer_id, state, current_node, started_at, due_at, updated_at, context_json
+       from journey_instances
+       where journey_id = $1
+         and journey_version = $2
+         and state = 'waiting_manual'
+         and current_node = $3
+       order by started_at asc
+       limit $4
+       offset $5`,
+      [journeyId, version, waitNodeId, limit, offset]
+    );
+
+    res.status(200).json({
+      status: 'ok',
+      journey_id: journeyId,
+      journey_version: version,
+      wait_node_id: waitNodeId,
+      items: result.rows,
+      meta: { limit, offset, total, has_more: offset + result.rows.length < total }
+    });
+  } catch (error) {
+    res.status(400).json({ status: 'error', message: error.message });
+  }
+});
+
+app.post('/manual-wait-release', async (req, res) => {
+  try {
+    const payload = ManualWaitReleaseSchema.parse(req.body);
+    const version = await resolveJourneyVersion(payload.journey_id, payload.version);
+    const waitNodeId = await resolveWaitNodeId(payload.journey_id, version, payload.wait_node_id);
+
+    await pgClient.query('begin');
+    const released = await pgClient.query(
+      `with picked as (
+         select instance_id
+         from journey_instances
+         where journey_id = $1
+           and journey_version = $2
+           and state = 'waiting_manual'
+           and current_node = $3
+         order by started_at asc
+         limit $4
+         for update skip locked
+       )
+       update journey_instances ji
+       set state = 'waiting',
+           due_at = now(),
+           updated_at = now(),
+           context_json = ji.context_json || $5::jsonb
+       from picked
+       where ji.instance_id = picked.instance_id
+       returning ji.instance_id, ji.customer_id, ji.last_event_id`,
+      [
+        payload.journey_id,
+        version,
+        waitNodeId,
+        payload.count,
+        JSON.stringify({
+          manual_release_at: new Date().toISOString(),
+          manual_release_by: payload.released_by || 'ui',
+          manual_release_count: payload.count
+        })
+      ]
+    );
+
+    for (const item of released.rows) {
+      await pgClient.query(
+        `insert into journey_instance_transitions
+          (id, instance_id, journey_id, journey_version, customer_id, from_state, to_state, from_node, to_node, reason, event_id, metadata_json)
+         values
+          ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        [
+          crypto.randomUUID(),
+          item.instance_id,
+          payload.journey_id,
+          version,
+          item.customer_id,
+          'waiting_manual',
+          'waiting',
+          waitNodeId,
+          waitNodeId,
+          'manual_release',
+          item.last_event_id || null,
+          {
+            released_by: payload.released_by || 'ui',
+            requested_count: payload.count
+          }
+        ]
+      );
+    }
+    await pgClient.query('commit');
+
+    res.status(200).json({
+      status: 'ok',
+      journey_id: payload.journey_id,
+      journey_version: version,
+      wait_node_id: waitNodeId,
+      released_count: released.rowCount
+    });
+  } catch (error) {
+    await pgClient.query('rollback').catch(() => {});
+    res.status(400).json({ status: 'error', message: error.message });
   }
 });
 

@@ -699,6 +699,7 @@ function normalizeJourneyDefinition(row) {
 
   const triggerEventType = triggerNode?.data?.event_type || triggerNode?.event_type || 'cart_add';
   const waitMinutes = Math.max(1, Number(waitNode?.data?.wait_minutes || 30));
+  const waitIsManual = Boolean(waitNode?.data?.manual_release);
   const conditionKey = conditionNode?.data?.condition_key || null;
   const conditionEventType = conditionNode?.data?.condition_event_type || null;
   const conditionSegmentValue = conditionNode?.data?.condition_segment_value || null;
@@ -711,6 +712,7 @@ function normalizeJourneyDefinition(row) {
     version: row.version,
     trigger_event_type: triggerEventType,
     wait_minutes: waitMinutes,
+    wait_is_manual: waitIsManual,
     wait_node_id: waitNode?.id || triggerNode.id,
     condition_node_id: conditionNode?.id || null,
     condition_key: conditionKey,
@@ -899,9 +901,13 @@ async function ensureSchema() {
   `);
 
   await pgClient.query(`
-    create unique index if not exists uq_journey_instance_active
+    drop index if exists uq_journey_instance_active
+  `);
+
+  await pgClient.query(`
+    create unique index uq_journey_instance_active
       on journey_instances (journey_id, customer_id)
-      where state in ('waiting', 'active', 'processing')
+      where state in ('waiting', 'waiting_manual', 'active', 'processing')
   `);
 
   await pgClient.query(`
@@ -1002,7 +1008,7 @@ async function createOrReplaceWaitingInstance(journey, event) {
   const existing = await pgClient.query(
     `select instance_id, state, current_node, journey_version
      from journey_instances
-     where journey_id = $1 and customer_id = $2 and state in ('waiting', 'active', 'processing')
+     where journey_id = $1 and customer_id = $2 and state in ('waiting', 'waiting_manual', 'active', 'processing')
      limit 1`,
     [journey.journey_id, event.customer_id]
   );
@@ -1011,10 +1017,10 @@ async function createOrReplaceWaitingInstance(journey, event) {
     const current = existing.rows[0];
     await pgClient.query(
       `update journey_instances
-       set state = 'waiting',
+       set state = $7,
            current_node = $6,
            started_at = $1,
-           due_at = $2::timestamptz + make_interval(mins => $3),
+           due_at = case when $7 = 'waiting_manual' then null else $2::timestamptz + make_interval(mins => $3) end,
            last_event_id = $4,
            context_json = jsonb_build_object('trigger_event_id', $4, 'trigger_ts', $1),
            updated_at = now(),
@@ -1026,7 +1032,8 @@ async function createOrReplaceWaitingInstance(journey, event) {
         journey.wait_minutes,
         event.event_id,
         current.instance_id,
-        journey.wait_node_id
+        journey.wait_node_id,
+        journey.wait_is_manual ? 'waiting_manual' : 'waiting'
       ]
     );
     await logInstanceTransition({
@@ -1035,12 +1042,12 @@ async function createOrReplaceWaitingInstance(journey, event) {
       journeyVersion: current.journey_version || journey.version,
       customerId: event.customer_id,
       fromState: current.state,
-      toState: 'waiting',
+      toState: journey.wait_is_manual ? 'waiting_manual' : 'waiting',
       fromNode: current.current_node,
       toNode: journey.wait_node_id,
-      reason: 'trigger_event_replace_wait',
+      reason: journey.wait_is_manual ? 'trigger_event_replace_manual_wait' : 'trigger_event_replace_wait',
       eventId: event.event_id,
-      metadata: { trigger_event_type: event.event_type, wait_minutes: journey.wait_minutes }
+      metadata: { trigger_event_type: event.event_type, wait_minutes: journey.wait_minutes, wait_is_manual: journey.wait_is_manual }
     });
     return;
   }
@@ -1050,7 +1057,7 @@ async function createOrReplaceWaitingInstance(journey, event) {
     `insert into journey_instances
       (instance_id, journey_id, journey_version, customer_id, state, current_node, started_at, due_at, last_event_id, context_json)
      values
-      ($1, $2, $3, $4, 'waiting', $5, $6, $6::timestamptz + make_interval(mins => $7), $8, $9)`,
+      ($1, $2, $3, $4, $10, $5, $6, case when $10 = 'waiting_manual' then null else $6::timestamptz + make_interval(mins => $7) end, $8, $9)`,
     [
       newInstanceId,
       journey.journey_id,
@@ -1065,7 +1072,8 @@ async function createOrReplaceWaitingInstance(journey, event) {
         trigger_ts: event.ts,
         wait_node_id: journey.wait_node_id,
         action_node_id: journey.default_action_node_id
-      })
+      }),
+      journey.wait_is_manual ? 'waiting_manual' : 'waiting'
     ]
   );
 
@@ -1075,12 +1083,12 @@ async function createOrReplaceWaitingInstance(journey, event) {
     journeyVersion: journey.version,
     customerId: event.customer_id,
     fromState: null,
-    toState: 'waiting',
+    toState: journey.wait_is_manual ? 'waiting_manual' : 'waiting',
     fromNode: null,
     toNode: journey.wait_node_id,
-    reason: 'trigger_event_new_instance',
+    reason: journey.wait_is_manual ? 'trigger_event_new_manual_wait_instance' : 'trigger_event_new_instance',
     eventId: event.event_id,
-    metadata: { trigger_event_type: event.event_type, wait_minutes: journey.wait_minutes }
+    metadata: { trigger_event_type: event.event_type, wait_minutes: journey.wait_minutes, wait_is_manual: journey.wait_is_manual }
   });
 }
 

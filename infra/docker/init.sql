@@ -81,7 +81,7 @@ create table if not exists journey_instances (
 
 create unique index if not exists uq_journey_instance_active
   on journey_instances (journey_id, customer_id)
-  where state in ('waiting', 'active', 'processing');
+  where state in ('waiting', 'waiting_manual', 'active', 'processing');
 
 create index if not exists idx_journey_instances_due
   on journey_instances (state, due_at);

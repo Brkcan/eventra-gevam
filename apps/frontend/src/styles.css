@@ -106,39 +106,6 @@ body {
   flex-wrap: wrap;
 }
 
-.topbar {
-  padding: 14px 20px;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--line);
-  background: linear-gradient(90deg, rgba(255, 252, 245, 0.96), rgba(255, 246, 229, 0.92));
-  backdrop-filter: blur(6px);
-  box-shadow: 0 8px 20px -18px rgba(76, 40, 12, 0.55);
-}
-
-.topbar h1 {
-  margin: 0;
-  font-size: 23px;
-  letter-spacing: 0.4px;
-}
-
-.topActions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.topbar span {
-  font-size: 12px;
-  font-weight: 700;
-  color: #7a5834;
-  padding: 4px 10px;
-  border: 1px solid #d6bd99;
-  border-radius: 999px;
-  background: rgba(255, 236, 210, 0.8);
-}
-
 .controlsBar {
   display: grid;
   grid-template-columns: 1fr;
@@ -283,7 +250,7 @@ button:disabled {
 
 .workspace {
   min-height: 0;
-  flex: 1;
+  flex: 1 1 auto;
   display: grid;
   grid-template-columns: 1fr 320px;
   gap: 12px;
@@ -292,6 +259,76 @@ button:disabled {
 
 .workspace.noInspector {
   grid-template-columns: 1fr;
+}
+
+.journeyLogsPanel {
+  margin: 0 12px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 251, 243, 0.9);
+  overflow: hidden;
+}
+
+.journeyLogsHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 246, 232, 0.92);
+}
+
+.journeyLogsHead h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.journeyLogsHead span {
+  font-size: 12px;
+  color: #705b40;
+  font-weight: 600;
+}
+
+.journeyLogsTableWrap {
+  max-height: 240px;
+  overflow: auto;
+}
+
+.manualQueueToolbar {
+  display: flex;
+  gap: 10px;
+  align-items: end;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.manualQueueToolbar label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: #5b4a33;
+  font-weight: 600;
+}
+
+.journeyLogsTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.journeyLogsTable th,
+.journeyLogsTable td {
+  border-bottom: 1px solid #e2d4be;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.journeyLogsTable thead th {
+  background: #fff8ed;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .canvas {
