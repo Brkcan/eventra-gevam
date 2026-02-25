@@ -26,10 +26,84 @@ body {
   color: var(--text);
 }
 
-.page {
+.appShell {
   height: 100vh;
   display: grid;
-  grid-template-rows: auto auto auto auto auto 1fr;
+  grid-template-columns: 220px 1fr;
+}
+
+.leftMenu {
+  border-right: 1px solid #1f3147;
+  background: linear-gradient(180deg, #081623, #0f2234 55%, #0e1a2a);
+  color: #c7d5e7;
+  padding: 16px 12px;
+}
+
+.brand {
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #f3b36b;
+  margin-bottom: 14px;
+}
+
+.leftMenu nav {
+  display: grid;
+  gap: 6px;
+}
+
+.navItem {
+  text-align: left;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 9px 10px;
+  background: transparent;
+  color: #d6e1ef;
+}
+
+.navItem.active {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+
+.page {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.designerTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 250, 241, 0.86);
+}
+
+.designerTitle {
+  display: grid;
+  gap: 2px;
+}
+
+.designerTitle strong {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.designerTitle span {
+  font-size: 12px;
+  color: #6d573d;
+}
+
+.designerActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .topbar {
@@ -49,6 +123,12 @@ body {
   letter-spacing: 0.4px;
 }
 
+.topActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .topbar span {
   font-size: 12px;
   font-weight: 700;
@@ -61,12 +141,31 @@ body {
 
 .controlsBar {
   display: grid;
-  grid-template-columns: 2fr 2fr 100px 2fr 140px auto;
+  grid-template-columns: 1fr;
   gap: 10px;
   padding: 11px 12px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
   animation: fadeSlide 220ms ease;
+}
+
+.journeyMetaToggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.journeyMetaSummary {
+  font-size: 13px;
+  color: #6d573d;
+  font-weight: 600;
+}
+
+.journeyMetaGrid {
+  display: grid;
+  grid-template-columns: 2fr 110px 2fr 150px 180px;
+  gap: 10px;
 }
 
 .controlsBar label,
@@ -100,9 +199,7 @@ body {
 .controlsBar select:focus,
 .panelFields input:focus,
 .panelFields select:focus,
-.panelFields textarea:focus,
-.listBar input:focus,
-.listBar select:focus {
+.panelFields textarea:focus {
   border-color: #ce7d3d;
   box-shadow: 0 0 0 3px rgba(206, 125, 61, 0.14);
   outline: none;
@@ -178,67 +275,28 @@ button:disabled {
   background: rgba(255, 250, 241, 0.82);
 }
 
-.listBar {
-  display: grid;
-  grid-template-columns: 2fr 180px 120px auto;
-  gap: 10px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--line);
-  background: rgba(255, 248, 236, 0.8);
-  animation: fadeSlide 220ms ease;
-}
-
-.listBar label {
-  display: grid;
-  gap: 4px;
-  font-size: 12px;
-  color: #5b4a33;
-}
-
-.listBar input,
-.listBar select {
-  width: 100%;
-  border: 1px solid #ccb38e;
-  background: #fffdf8;
-  border-radius: 10px;
-  padding: 8px;
-  font-size: 13px;
-  transition: border-color 120ms ease, box-shadow 120ms ease;
-}
-
-.pager {
-  display: flex;
-  align-items: end;
-  gap: 8px;
-}
-
-.pager span {
-  font-size: 12px;
-  color: #6f5b42;
-  min-width: 95px;
-  text-align: center;
-}
-
 .builderBar span {
   font-size: 12px;
   color: #6f5b42;
   font-weight: 600;
 }
 
-.dragHint {
-  margin-left: 6px;
-}
-
 .workspace {
   min-height: 0;
+  flex: 1;
   display: grid;
   grid-template-columns: 1fr 320px;
   gap: 12px;
   padding: 12px;
 }
 
+.workspace.noInspector {
+  grid-template-columns: 1fr;
+}
+
 .canvas {
   min-width: 0;
+  position: relative;
   padding: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -249,6 +307,46 @@ button:disabled {
   box-shadow:
     0 20px 30px -28px rgba(76, 40, 12, 0.5),
     0 2px 0 rgba(255, 255, 255, 0.7) inset;
+}
+
+.canvasTools {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 7;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  max-width: 60%;
+  justify-content: flex-end;
+}
+
+.canvasTools button {
+  height: 30px;
+  padding: 0 9px;
+  font-size: 12px;
+  border-radius: 999px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.canvasTools button span {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.45);
+  border: 1px solid rgba(103, 70, 36, 0.24);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.canvasTools button:hover:not(:disabled) {
+  transform: translateY(-1px) scale(1.03);
 }
 
 .canvas .react-flow {
@@ -345,6 +443,154 @@ button:disabled {
   font-size: 11px;
 }
 
+.libraryWorkspace {
+  padding: 14px;
+  overflow: auto;
+  display: grid;
+  gap: 14px;
+}
+
+.libraryToolbar {
+  display: flex;
+  gap: 10px;
+  align-items: end;
+  flex-wrap: wrap;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 251, 243, 0.9);
+}
+
+.librarySummary {
+  display: grid;
+  gap: 2px;
+  min-width: 160px;
+  padding: 7px 10px;
+  border: 1px solid #d4bc97;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #fff9ee, #f7ecd9);
+}
+
+.librarySummary strong {
+  font-size: 13px;
+  color: #5c4428;
+}
+
+.librarySummary span {
+  font-size: 11px;
+  color: #7a6247;
+}
+
+.libraryToolbar label {
+  display: grid;
+  gap: 4px;
+  color: #5b4a33;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.libraryToolbar input,
+.libraryToolbar select {
+  border: 1px solid #ccb38e;
+  background: #fffdf8;
+  border-radius: 10px;
+  padding: 8px;
+  font-size: 14px;
+}
+
+.folderGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.folderCard {
+  display: grid;
+  gap: 7px;
+  text-align: left;
+  min-height: 96px;
+  border: 1px solid #d6be9b;
+  border-radius: 12px;
+  background: linear-gradient(160deg, #fffaf2, #f7ebd8);
+  cursor: pointer;
+  padding: 10px;
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.folderCard:hover {
+  transform: translateY(-1px);
+  border-color: #cfa87b;
+}
+
+.folderHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.folderCard.active {
+  border-color: #cd7b35;
+  box-shadow: 0 0 0 3px rgba(205, 123, 53, 0.16);
+}
+
+.folderCard.dropActive {
+  border-color: #4c9b5f;
+  box-shadow: 0 0 0 3px rgba(76, 155, 95, 0.2);
+}
+
+.folderIcon {
+  font-size: 11px;
+  font-weight: 700;
+  color: #8a6339;
+}
+
+.folderCount {
+  font-size: 11px;
+  font-weight: 700;
+  color: #6b4f2f;
+  border: 1px solid #d4bc97;
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.folderName {
+  font-size: 14px;
+  color: #3f2f1c;
+}
+
+.folderHint {
+  color: #7a6247;
+  font-size: 11px;
+}
+
+.journeyGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.journeyCard {
+  display: grid;
+  gap: 6px;
+  text-align: left;
+  border: 1px solid #d6be9b;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fffaf2, #f3e7d5);
+  padding: 12px;
+  cursor: grab;
+}
+
+.journeyCard.dragging {
+  opacity: 0.55;
+  transform: scale(0.98);
+}
+
+.journeyCard small {
+  color: #7a6247;
+  font-size: 11px;
+}
+
 @keyframes fadeSlide {
   from {
     opacity: 0.75;
@@ -357,7 +603,19 @@ button:disabled {
 }
 
 @media (max-width: 1000px) {
+  .appShell {
+    grid-template-columns: 1fr;
+  }
+
+  .leftMenu {
+    display: none;
+  }
+
   .controlsBar {
+    grid-template-columns: 1fr;
+  }
+
+  .journeyMetaGrid {
     grid-template-columns: 1fr;
   }
 
@@ -371,12 +629,20 @@ button:disabled {
     padding: 8px;
   }
 
-  .listBar {
-    grid-template-columns: 1fr;
+  .designerTop {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
-  .pager {
-    align-items: center;
+  .designerTitle strong {
+    font-size: 22px;
+  }
+
+  .canvasTools {
+    max-width: 100%;
+    left: 10px;
+    right: 10px;
+    justify-content: flex-start;
   }
 
   .sidePanel {

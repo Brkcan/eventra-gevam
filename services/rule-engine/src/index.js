@@ -685,12 +685,16 @@ async function ensureSchema() {
       version int not null,
       name text not null,
       status text not null default 'published',
+      folder_path text not null default 'Workspace',
       graph_json jsonb not null,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now(),
       primary key (journey_id, version)
     )
   `);
+  await pgClient.query(
+    `alter table journeys add column if not exists folder_path text not null default 'Workspace'`
+  );
 
   await pgClient.query(`
     create table if not exists journey_instances (

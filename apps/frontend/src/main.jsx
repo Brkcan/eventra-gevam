@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import {
   addEdge,
@@ -13,6 +13,8 @@ import 'reactflow/dist/style.css';
 import './styles.css';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+const DEFAULT_FOLDER = 'Workspace';
+const NAV_ITEMS = ['Scenarios', 'Catalogues', 'Management', 'Dashboards'];
 
 function defaultLabelForKind(nodeKind) {
   if (nodeKind === 'trigger') return 'Trigger: cart_add';
@@ -173,19 +175,18 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState(null);
-  const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [journeyItems, setJourneyItems] = useState([]);
+  const [folderItems, setFolderItems] = useState([DEFAULT_FOLDER]);
+  const [selectedFolder, setSelectedFolder] = useState(DEFAULT_FOLDER);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [activeMenu, setActiveMenu] = useState('Scenarios');
+  const [viewMode, setViewMode] = useState('library');
+  const [showJourneyMeta, setShowJourneyMeta] = useState(false);
+  const [showInspector, setShowInspector] = useState(false);
   const [selectedJourneyKey, setSelectedJourneyKey] = useState('');
-  const [journeyListQuery, setJourneyListQuery] = useState('');
-  const [journeyListStatus, setJourneyListStatus] = useState('all');
-  const [journeyListLimit, setJourneyListLimit] = useState(25);
-  const [journeyListOffset, setJourneyListOffset] = useState(0);
-  const [journeyListMeta, setJourneyListMeta] = useState({
-    total: 0,
-    has_more: false,
-    limit: 25,
-    offset: 0
-  });
+  const [draggedJourneyKey, setDraggedJourneyKey] = useState('');
+  const [activeDropFolder, setActiveDropFolder] = useState('');
+  const draggedJourneyKeyRef = useRef('');
 
   const selectedNode = useMemo(
     () => nodes.find((node) => node.id === selectedNodeId) || null,
@@ -201,6 +202,33 @@ function App() {
     [journeyItems, selectedJourneyKey]
   );
 
+  const journeysInSelectedFolder = useMemo(
+    () =>
+      journeyItems.filter(
+        (item) => String(item.folder_path || DEFAULT_FOLDER) === String(selectedFolder || DEFAULT_FOLDER)
+      ),
+    [journeyItems, selectedFolder]
+  );
+  const allFolders = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          DEFAULT_FOLDER,
+          ...folderItems,
+          ...journeyItems.map((item) => item.folder_path || DEFAULT_FOLDER)
+        ])
+      ),
+    [folderItems, journeyItems]
+  );
+  const folderCounts = useMemo(() => {
+    const counts = {};
+    for (const item of journeyItems) {
+      const folder = item.folder_path || DEFAULT_FOLDER;
+      counts[folder] = (counts[folder] || 0) + 1;
+    }
+    return counts;
+  }, [journeyItems]);
+
   const onConnect = useCallback(
     (connection) =>
       setEdges((current) =>
@@ -215,16 +243,19 @@ function App() {
   const onNodeClick = useCallback((_event, node) => {
     setSelectedNodeId(node.id);
     setSelectedEdgeId(null);
+    setShowInspector(true);
   }, []);
 
   const onEdgeClick = useCallback((_event, edge) => {
     setSelectedEdgeId(edge.id);
     setSelectedNodeId(null);
+    setShowInspector(true);
   }, []);
 
   const onPaneClick = useCallback(() => {
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
+    setShowInspector(false);
   }, []);
 
   const graphJson = useMemo(() => ({ nodes, edges }), [nodes, edges]);
@@ -253,34 +284,6 @@ function App() {
       }
     },
     [nodes, selectedNodeId, setEdges, setNodes]
-  );
-
-  const onDragStart = useCallback((event, nodeKind) => {
-    event.dataTransfer.setData('application/eventra-node-kind', nodeKind);
-    event.dataTransfer.effectAllowed = 'move';
-  }, []);
-
-  const onDragOverCanvas = useCallback((event) => {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-  }, []);
-
-  const onDropCanvas = useCallback(
-    (event) => {
-      event.preventDefault();
-      const nodeKind = event.dataTransfer.getData('application/eventra-node-kind');
-      if (!nodeKind || !reactFlowInstance) {
-        return;
-      }
-
-      const position = reactFlowInstance.screenToFlowPosition({
-        x: event.clientX,
-        y: event.clientY
-      });
-
-      addNode(nodeKind, position);
-    },
-    [addNode, reactFlowInstance]
   );
 
   const deleteSelected = useCallback(() => {
@@ -382,6 +385,7 @@ function App() {
       setVersion(journey.version);
       setName(journey.name || journey.journey_id);
       setJourneyStatus(journey.status || 'published');
+      setSelectedFolder(journey.folder_path || DEFAULT_FOLDER);
       setSelectedJourneyKey(`${journey.journey_id}::${journey.version}`);
 
       const loadedNodesRaw = Array.isArray(journey.graph_json?.nodes) ? journey.graph_json.nodes : [];
@@ -413,81 +417,40 @@ function App() {
       }
       setSelectedNodeId(null);
       setSelectedEdgeId(null);
+      setViewMode('designer');
       setStatusText(`Yuklendi: ${journey.journey_id} v${journey.version}`);
     },
     [setEdges, setNodes]
   );
 
-  const fetchJourneys = useCallback(async (overrides = {}) => {
-    const shouldStore = overrides.store !== false;
-    const finalQuery = overrides.query ?? journeyListQuery;
-    const finalStatus = overrides.status ?? journeyListStatus;
-    const finalLimit = overrides.limit ?? journeyListLimit;
-    const finalOffset = overrides.offset ?? journeyListOffset;
-    const finalJourneyId = overrides.journey_id ?? null;
-    const finalSortBy = overrides.sort_by || 'updated_at';
-    const finalSortOrder = overrides.sort_order || 'desc';
-
-    const params = new URLSearchParams();
-    params.set('limit', String(finalLimit));
-    params.set('offset', String(finalOffset));
-    params.set('sort_by', finalSortBy);
-    params.set('sort_order', finalSortOrder);
-    if (finalQuery) {
-      params.set('journey_id', finalQuery);
-    }
-    if (finalJourneyId) {
-      params.set('journey_id', finalJourneyId);
-    }
-    if (finalStatus && finalStatus !== 'all') {
-      params.set('status', finalStatus);
-    }
-
+  const fetchJourneys = useCallback(async () => {
+    const params = new URLSearchParams({
+      limit: '500',
+      offset: '0',
+      sort_by: 'updated_at',
+      sort_order: 'desc'
+    });
     const response = await fetch(`${API_BASE_URL}/journeys?${params.toString()}`);
     if (!response.ok) {
       throw new Error(`Journey list failed: ${response.status}`);
     }
     const body = await response.json();
     const items = body.items || [];
-    const meta = body.meta || {};
-    if (shouldStore) {
-      setJourneyItems(items);
-      setJourneyListMeta({
-        total: Number(meta.total || 0),
-        has_more: Boolean(meta.has_more),
-        limit: Number(meta.limit || finalLimit),
-        offset: Number(meta.offset || finalOffset)
-      });
-    }
+    setJourneyItems(items);
     return items;
-  }, [journeyListLimit, journeyListOffset, journeyListQuery, journeyListStatus]);
+  }, []);
 
-  const loadJourney = useCallback(async () => {
-    setBusy(true);
-    setStatusText('Journey yukleniyor...');
-
-    try {
-      const items = await fetchJourneys({
-        journey_id: journeyId,
-        limit: 100,
-        offset: 0,
-        sort_by: 'version',
-        sort_order: 'desc',
-        status: 'all',
-        store: false
-      });
-      const latest = getLatestJourney(items, journeyId);
-      if (!latest) {
-        setStatusText('Journey bulunamadi, varsayilan akis gosteriliyor');
-        return;
-      }
-      applyJourneyToCanvas(latest);
-    } catch (error) {
-      setStatusText(`Yukleme hatasi: ${error.message}`);
-    } finally {
-      setBusy(false);
+  const fetchFolders = useCallback(async () => {
+    const response = await fetch(`${API_BASE_URL}/journey-folders`);
+    if (!response.ok) {
+      throw new Error(`Folder list failed: ${response.status}`);
     }
-  }, [applyJourneyToCanvas, fetchJourneys, journeyId]);
+    const body = await response.json();
+    const dbFolders = (body.items || []).map((item) => item.folder_path).filter(Boolean);
+    const merged = Array.from(new Set([DEFAULT_FOLDER, ...dbFolders]));
+    setFolderItems(merged);
+    return merged;
+  }, []);
 
   const saveJourney = useCallback(async (statusOverride = null) => {
     setBusy(true);
@@ -512,7 +475,12 @@ function App() {
         }
       }
 
-      const listResponse = await fetch(`${API_BASE_URL}/journeys`);
+      const listParams = new URLSearchParams({
+        journey_id: journeyId,
+        limit: '500',
+        offset: '0'
+      });
+      const listResponse = await fetch(`${API_BASE_URL}/journeys?${listParams.toString()}`);
       if (!listResponse.ok) {
         throw new Error(`Journey list fetch failed: ${listResponse.status}`);
       }
@@ -537,6 +505,7 @@ function App() {
         version,
         name,
         status: finalStatus,
+        folder_path: selectedFolder || DEFAULT_FOLDER,
         graph_json: graphJson
       };
 
@@ -554,13 +523,14 @@ function App() {
       setJourneyStatus(finalStatus);
       setStatusText(`Kayit tamamlandi: ${journeyId} v${version} [${finalStatus}]`);
       await fetchJourneys();
+      await fetchFolders();
       setSelectedJourneyKey(`${journeyId}::${version}`);
     } catch (error) {
       setStatusText(`Kayit hatasi: ${error.message}`);
     } finally {
       setBusy(false);
     }
-  }, [fetchJourneys, graphJson, journeyId, journeyStatus, name, nodes, version]);
+  }, [fetchFolders, fetchJourneys, graphJson, journeyId, journeyStatus, name, nodes, selectedFolder, version]);
 
   const rollbackSelectedVersion = useCallback(async () => {
     if (!selectedJourneyItem) {
@@ -613,8 +583,209 @@ function App() {
     setEdges([]);
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
+    setSelectedJourneyKey('');
+    setViewMode('designer');
     setStatusText('Yeni journey olusturuldu. Canvas bos, node ekleyerek baslayabilirsin.');
   }, [setEdges, setNodes]);
+
+  const createFolder = useCallback(async () => {
+    const folderPath = String(newFolderName || '').trim();
+    if (!folderPath) {
+      setStatusText('Klasor adi bos olamaz.');
+      return;
+    }
+
+    try {
+      setBusy(true);
+      const response = await fetch(`${API_BASE_URL}/journey-folders`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ folder_path: folderPath })
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body.message || `Folder create failed: ${response.status}`);
+      }
+      await fetchFolders();
+      setSelectedFolder(folderPath);
+      setNewFolderName('');
+      setStatusText(`Klasor olusturuldu: ${folderPath}`);
+    } catch (error) {
+      setStatusText(`Klasor olusturma hatasi: ${error.message}`);
+    } finally {
+      setBusy(false);
+    }
+  }, [fetchFolders, newFolderName]);
+
+  const moveJourneyToFolder = useCallback(
+    async (journeyItem, targetFolderOverride = null) => {
+      const targetFolder = String(
+        targetFolderOverride || journeyItem.folder_path || selectedFolder || DEFAULT_FOLDER
+      ).trim();
+
+      if (!targetFolder) {
+        setStatusText('Hedef klasor bos olamaz.');
+        return false;
+      }
+      if (targetFolder === (journeyItem.folder_path || DEFAULT_FOLDER)) {
+        setStatusText('Journey zaten bu klasorde.');
+        return false;
+      }
+
+      try {
+        setBusy(true);
+        let response = await fetch(
+          `${API_BASE_URL}/journeys/${encodeURIComponent(journeyItem.journey_id)}/move-folder`,
+          {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              version: Number(journeyItem.version),
+              target_folder_path: targetFolder
+            })
+          }
+        );
+        let body = await response.json().catch(() => ({}));
+        let usedLegacyFallback = false;
+
+        // Fallback: older API may not have /move-folder yet.
+        if (response.status === 404) {
+          const latest = await fetchJourneys();
+          const source = (latest || []).find(
+            (journey) =>
+              journey.journey_id === journeyItem.journey_id &&
+              Number(journey.version) === Number(journeyItem.version)
+          );
+          if (source) {
+            response = await fetch(`${API_BASE_URL}/journeys`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                journey_id: source.journey_id,
+                version: Number(source.version),
+                name: source.name || source.journey_id,
+                status: source.status || 'draft',
+                folder_path: targetFolder,
+                graph_json: source.graph_json || { nodes: [], edges: [] }
+              })
+            });
+            body = await response.json().catch(() => ({}));
+            usedLegacyFallback = true;
+          }
+        }
+
+        if (!response.ok) {
+          throw new Error(body.message || `Move failed: ${response.status}`);
+        }
+        if (!usedLegacyFallback && Object.prototype.hasOwnProperty.call(body || {}, 'moved')) {
+          const movedCount = Number(body?.moved?.count || 0);
+          if (movedCount <= 0) {
+            throw new Error('move endpoint updated 0 rows');
+          }
+        }
+
+        // Optimistic local state update to avoid stale list issues.
+        setJourneyItems((current) =>
+          current.map((journey) =>
+            journey.journey_id === journeyItem.journey_id &&
+            Number(journey.version) === Number(journeyItem.version)
+              ? { ...journey, folder_path: targetFolder }
+              : journey
+          )
+        );
+
+        const refreshedItems = await fetchJourneys();
+        await fetchFolders();
+        const refreshedMovedItem = (refreshedItems || []).find(
+          (journey) =>
+            journey.journey_id === journeyItem.journey_id &&
+            Number(journey.version) === Number(journeyItem.version)
+        );
+        if (
+          refreshedMovedItem &&
+          String(refreshedMovedItem.folder_path || DEFAULT_FOLDER) !== targetFolder
+        ) {
+          setJourneyItems((current) =>
+            current.map((journey) =>
+              journey.journey_id === journeyItem.journey_id &&
+              Number(journey.version) === Number(journeyItem.version)
+                ? { ...journey, folder_path: targetFolder }
+                : journey
+            )
+          );
+          setStatusText(
+            `${journeyItem.journey_id} tasindi, liste cache oldugu icin client tarafinda duzeltildi.`
+          );
+          return true;
+        }
+        setStatusText(
+          `${journeyItem.journey_id} v${journeyItem.version} -> ${targetFolder} tasindi.`
+        );
+        return true;
+      } catch (error) {
+        setStatusText(`Tasima hatasi: ${error.message}`);
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [fetchFolders, fetchJourneys, selectedFolder]
+  );
+
+  const onJourneyDragStart = useCallback((event, journeyItem) => {
+    const key = `${journeyItem.journey_id}::${journeyItem.version}`;
+    event.dataTransfer.setData('application/eventra-journey-key', key);
+    event.dataTransfer.setData('text/plain', key);
+    event.dataTransfer.effectAllowed = 'move';
+    draggedJourneyKeyRef.current = key;
+    setDraggedJourneyKey(key);
+  }, []);
+
+  const onJourneyDragEnd = useCallback(() => {
+    // Drop sonrasi cleanup onFolderDrop icinde yapiliyor.
+    setActiveDropFolder('');
+  }, []);
+
+  const onFolderDragOver = useCallback((event, folder) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    setActiveDropFolder(folder);
+  }, []);
+
+  const onFolderDragEnter = useCallback((event, folder) => {
+    event.preventDefault();
+    setActiveDropFolder(folder);
+  }, []);
+
+  const onFolderDrop = useCallback(
+    async (event, folder) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const key =
+        event.dataTransfer.getData('application/eventra-journey-key') ||
+        event.dataTransfer.getData('text/plain') ||
+        draggedJourneyKeyRef.current ||
+        draggedJourneyKey;
+      setActiveDropFolder('');
+      if (!key) {
+        setStatusText('Surukle-birak verisi okunamadi, tekrar dene.');
+        return;
+      }
+      setSelectedFolder(folder);
+      const item = journeyItems.find((journey) => `${journey.journey_id}::${journey.version}` === key);
+      if (!item) {
+        setStatusText('Tasima icin journey bulunamadi.');
+        return;
+      }
+      const moved = await moveJourneyToFolder(item, folder);
+      if (!moved) {
+        return;
+      }
+      draggedJourneyKeyRef.current = '';
+      setDraggedJourneyKey('');
+    },
+    [draggedJourneyKey, journeyItems, moveJourneyToFolder]
+  );
 
   const deleteJourney = useCallback(async () => {
     if (!journeyId || !version) {
@@ -641,6 +812,7 @@ function App() {
       }
 
       await fetchJourneys();
+      await fetchFolders();
       setSelectedJourneyKey('');
       newJourney();
       setStatusText(`${journeyId} v${version} silindi.`);
@@ -649,17 +821,24 @@ function App() {
     } finally {
       setBusy(false);
     }
-  }, [fetchJourneys, journeyId, newJourney, version]);
+  }, [fetchFolders, fetchJourneys, journeyId, newJourney, version]);
 
   useEffect(() => {
-    fetchJourneys().catch((error) => {
-      setStatusText(`Journey listesi yuklenemedi: ${error.message}`);
-    });
-  }, [fetchJourneys]);
+    (async () => {
+      try {
+        await fetchJourneys();
+        await fetchFolders();
+      } catch (error) {
+        setStatusText(`Journey/Folders yuklenemedi: ${error.message}`);
+      }
+    })();
+  }, [fetchFolders, fetchJourneys]);
 
   useEffect(() => {
-    setJourneyListOffset(0);
-  }, [journeyListQuery, journeyListStatus, journeyListLimit]);
+    if (!allFolders.includes(selectedFolder)) {
+      setSelectedFolder(DEFAULT_FOLDER);
+    }
+  }, [allFolders, selectedFolder]);
 
   const selectedData = selectedNode ? normalizeNodeData(selectedNode.data, selectedNode.id) : null;
   const headersValidation =
@@ -672,104 +851,75 @@ function App() {
       : { ok: true };
 
   return (
-    <div className="page">
+    <div className="appShell">
+      <aside className="leftMenu">
+        <div className="brand">EVENTRA</div>
+        <nav>
+          {NAV_ITEMS.map((item) => (
+            <button
+              key={item}
+              type="button"
+              className={activeMenu === item ? 'navItem active' : 'navItem'}
+              onClick={() => setActiveMenu(item)}
+            >
+              {item}
+            </button>
+          ))}
+        </nav>
+      </aside>
+
+      <div className="page">
       <header className="topbar">
         <h1>Eventra Journey Designer</h1>
-        <span>MVP v0.3</span>
+        <div className="topActions">
+          <button
+            type="button"
+            className={viewMode === 'library' ? 'primary' : ''}
+            onClick={() => setViewMode('library')}
+          >
+            Library
+          </button>
+          <button
+            type="button"
+            className={viewMode === 'designer' ? 'primary' : ''}
+            onClick={() => setViewMode('designer')}
+          >
+            Designer
+          </button>
+          <span>MVP v0.3</span>
+        </div>
       </header>
 
-      <section className="controlsBar">
-        <label>
-          Journey List
-          <select
-            value={selectedJourneyKey}
-            onChange={(e) => {
-              const value = e.target.value;
-              setSelectedJourneyKey(value);
-              const selected = journeyItems.find(
-                (item) => `${item.journey_id}::${item.version}` === value
-              );
-              if (selected) {
-                applyJourneyToCanvas(selected);
-              }
-            }}
-          >
-            <option value="">Select journey...</option>
-            {journeyItems.map((item) => (
-              <option
-                key={`${item.journey_id}::${item.version}`}
-                value={`${item.journey_id}::${item.version}`}
-              >
-                {item.journey_id} v{item.version} [{item.status}]
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Journey ID
-          <input value={journeyId} onChange={(e) => setJourneyId(e.target.value)} />
-        </label>
-        <label>
-          Version
-          <input
-            type="number"
-            min="1"
-            value={version}
-            onChange={(e) => setVersion(Math.max(1, Number(e.target.value) || 1))}
-          />
-        </label>
-        <label>
-          Name
-          <input value={name} onChange={(e) => setName(e.target.value)} />
-        </label>
-        <label>
-          Status
-          <select value={journeyStatus} onChange={(e) => setJourneyStatus(e.target.value)}>
-            <option value="draft">draft</option>
-            <option value="published">published</option>
-            <option value="archived">archived</option>
-          </select>
-        </label>
-        <div className="actions">
+      {viewMode === 'designer' && (
+      <>
+      <section className="designerTop">
+        <div className="designerTitle">
+          <strong>{name}</strong>
+          <span>Workspace &gt; {selectedFolder} &gt; {journeyId} v{version}</span>
+        </div>
+        <div className="designerActions">
+          <button type="button" onClick={() => setViewMode('library')} disabled={busy}>
+            Library
+          </button>
           <button
             type="button"
-            onClick={async () => {
-              try {
-                setBusy(true);
-                await fetchJourneys();
-                setStatusText('Journey listesi yenilendi.');
-              } catch (error) {
-                setStatusText(`Liste yenileme hatasi: ${error.message}`);
-              } finally {
-                setBusy(false);
-              }
-            }}
+            onClick={() => setShowJourneyMeta((prev) => !prev)}
             disabled={busy}
           >
-            Refresh List
+            {showJourneyMeta ? 'Hide Fields' : 'Journey Fields'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowInspector((prev) => !prev)}
+            disabled={busy}
+          >
+            {showInspector ? 'Hide Inspector' : 'Inspector'}
           </button>
           <button type="button" onClick={newJourney} disabled={busy}>
-            New Journey
+            New
           </button>
-          <button
-            type="button"
-            onClick={() => saveJourney('draft')}
-            disabled={busy}
-          >
+          <button type="button" onClick={() => saveJourney('draft')} disabled={busy}>
             Save Draft
-          </button>
-          <button
-            type="button"
-            onClick={rollbackSelectedVersion}
-            disabled={busy || !selectedJourneyItem}
-          >
-            Rollback Selected
-          </button>
-          <button type="button" className="danger" onClick={deleteJourney} disabled={busy}>
-            Delete Journey
-          </button>
-          <button type="button" onClick={loadJourney} disabled={busy}>
-            Load
           </button>
           <button
             type="button"
@@ -777,110 +927,81 @@ function App() {
             onClick={() => saveJourney('published')}
             disabled={busy}
           >
-            Publish
+            Save Now
           </button>
         </div>
       </section>
 
-      <section className="listBar">
-        <label>
-          List Search
-          <input
-            placeholder="journey_id ara..."
-            value={journeyListQuery}
-            onChange={(e) => setJourneyListQuery(e.target.value)}
-          />
-        </label>
-        <label>
-          List Status
-          <select
-            value={journeyListStatus}
-            onChange={(e) => setJourneyListStatus(e.target.value)}
-          >
-            <option value="all">all</option>
-            <option value="draft">draft</option>
-            <option value="published">published</option>
-            <option value="archived">archived</option>
-          </select>
-        </label>
-        <label>
-          Page Size
-          <select
-            value={journeyListLimit}
-            onChange={(e) => setJourneyListLimit(Number(e.target.value) || 25)}
-          >
-            <option value="10">10</option>
-            <option value="25">25</option>
-            <option value="50">50</option>
-            <option value="100">100</option>
-          </select>
-        </label>
-        <div className="pager">
-          <button
-            type="button"
-            disabled={busy || journeyListOffset <= 0}
-            onClick={() =>
-              setJourneyListOffset((prev) => Math.max(0, prev - journeyListLimit))
-            }
-          >
-            Prev
-          </button>
-          <span>
-            {journeyListMeta.total === 0
-              ? '0 / 0'
-              : `${journeyListMeta.offset + 1}-${Math.min(
-                  journeyListMeta.offset + journeyListMeta.limit,
-                  journeyListMeta.total
-                )} / ${journeyListMeta.total}`}
-          </span>
-          <button
-            type="button"
-            disabled={busy || !journeyListMeta.has_more}
-            onClick={() =>
-              setJourneyListOffset((prev) => prev + journeyListLimit)
-            }
-          >
-            Next
-          </button>
-        </div>
+      {showJourneyMeta && (
+      <section className="controlsBar">
+          <div className="journeyMetaGrid">
+            <label>
+              Journey ID
+              <input value={journeyId} onChange={(e) => setJourneyId(e.target.value)} />
+            </label>
+            <label>
+              Version
+              <input
+                type="number"
+                min="1"
+                value={version}
+                onChange={(e) => setVersion(Math.max(1, Number(e.target.value) || 1))}
+              />
+            </label>
+            <label>
+              Name
+              <input value={name} onChange={(e) => setName(e.target.value)} />
+            </label>
+            <label>
+              Status
+              <select value={journeyStatus} onChange={(e) => setJourneyStatus(e.target.value)}>
+                <option value="draft">draft</option>
+                <option value="published">published</option>
+                <option value="archived">archived</option>
+              </select>
+            </label>
+            <label>
+              Folder
+              <select value={selectedFolder} onChange={(e) => setSelectedFolder(e.target.value)}>
+                {allFolders.map((folder) => (
+                  <option key={folder} value={folder}>
+                    {folder}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
       </section>
+      )}
 
-      <section className="builderBar">
-        <span>Add Node:</span>
-        <button type="button" onClick={() => addNode('trigger')}>+ Trigger</button>
-        <button type="button" onClick={() => addNode('wait')}>+ Wait</button>
-        <button type="button" onClick={() => addNode('http_call')}>+ HTTP Call</button>
-        <button type="button" onClick={() => addNode('condition')}>+ Condition</button>
-        <button type="button" onClick={() => addNode('action')}>+ Action</button>
-        <span className="dragHint">Drag To Canvas:</span>
-        <button type="button" draggable onDragStart={(e) => onDragStart(e, 'trigger')}>
-          Drag Trigger
-        </button>
-        <button type="button" draggable onDragStart={(e) => onDragStart(e, 'wait')}>
-          Drag Wait
-        </button>
-        <button type="button" draggable onDragStart={(e) => onDragStart(e, 'http_call')}>
-          Drag HTTP
-        </button>
-        <button type="button" draggable onDragStart={(e) => onDragStart(e, 'condition')}>
-          Drag Condition
-        </button>
-        <button type="button" draggable onDragStart={(e) => onDragStart(e, 'action')}>
-          Drag Action
-        </button>
-        <button
-          type="button"
-          onClick={deleteSelected}
-          disabled={!selectedNodeId && !selectedEdgeId}
-        >
-          Delete Selected
-        </button>
-      </section>
-
-      <div className="statusBar">{statusText}</div>
-
-      <main className="workspace">
+      <main className={showInspector ? 'workspace withInspector' : 'workspace noInspector'}>
         <section className="canvas">
+          <div className="canvasTools">
+            <button type="button" title="Add Trigger" aria-label="Add Trigger" onClick={() => addNode('trigger')}>
+              <span>T</span> Trigger
+            </button>
+            <button type="button" title="Add Wait" aria-label="Add Wait" onClick={() => addNode('wait')}>
+              <span>W</span> Wait
+            </button>
+            <button type="button" title="Add HTTP Call" aria-label="Add HTTP Call" onClick={() => addNode('http_call')}>
+              <span>H</span> HTTP
+            </button>
+            <button type="button" title="Add Condition" aria-label="Add Condition" onClick={() => addNode('condition')}>
+              <span>C</span> Condition
+            </button>
+            <button type="button" title="Add Action" aria-label="Add Action" onClick={() => addNode('action')}>
+              <span>A</span> Action
+            </button>
+            <button
+              type="button"
+              title="Delete Selected"
+              aria-label="Delete Selected"
+              onClick={deleteSelected}
+              disabled={!selectedNodeId && !selectedEdgeId}
+            >
+              <span>X</span> Delete
+            </button>
+          </div>
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -890,9 +1011,6 @@ function App() {
             onNodeClick={onNodeClick}
             onEdgeClick={onEdgeClick}
             onPaneClick={onPaneClick}
-            onDragOver={onDragOverCanvas}
-            onDrop={onDropCanvas}
-            onInit={setReactFlowInstance}
             fitView
           >
             <MiniMap />
@@ -900,7 +1018,7 @@ function App() {
             <Background gap={20} />
           </ReactFlow>
         </section>
-
+        {showInspector && (
         <aside className="sidePanel">
           <h2>Node Ayarlari</h2>
           {!selectedNode && !selectedEdge && <p className="panelHint">Akista bir node veya edge sec.</p>}
@@ -1186,7 +1304,107 @@ function App() {
             </div>
           )}
         </aside>
+        )}
       </main>
+      </>
+      )}
+
+      {viewMode === 'library' && (
+        <main className="libraryWorkspace">
+          <section className="libraryToolbar">
+            <button type="button" className="primary" onClick={newJourney}>
+              + New Journey
+            </button>
+            <div className="librarySummary">
+              <strong>{selectedFolder}</strong>
+              <span>{journeysInSelectedFolder.length} journey</span>
+            </div>
+            <label>
+              Klasor sec
+              <select value={selectedFolder} onChange={(e) => setSelectedFolder(e.target.value)}>
+                {allFolders.map((folder) => (
+                  <option key={folder} value={folder}>
+                    {folder}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Yeni klasor
+              <input
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                placeholder="or: Test Senaryolari"
+              />
+            </label>
+            <button type="button" onClick={createFolder} disabled={busy}>
+              Klasor Olustur
+            </button>
+          </section>
+
+          <section className="folderGrid">
+            {allFolders.map((folder) => (
+              <div
+                key={folder}
+                role="button"
+                tabIndex={0}
+                className={
+                  folder === selectedFolder
+                    ? activeDropFolder === folder
+                      ? 'folderCard active dropActive'
+                      : 'folderCard active'
+                    : activeDropFolder === folder
+                      ? 'folderCard dropActive'
+                      : 'folderCard'
+                }
+                onClick={() => setSelectedFolder(folder)}
+                onDragEnter={(e) => onFolderDragEnter(e, folder)}
+                onDragOver={(e) => onFolderDragOver(e, folder)}
+                onDrop={(e) => onFolderDrop(e, folder)}
+              >
+                <div className="folderHead">
+                  <span className="folderIcon">[DIR]</span>
+                  <span className="folderCount">{folderCounts[folder] || 0}</span>
+                </div>
+                <strong className="folderName">{folder}</strong>
+                <small className="folderHint">
+                  {activeDropFolder === folder ? 'Drop now' : 'Drop journey here'}
+                </small>
+              </div>
+            ))}
+          </section>
+
+          <section className="journeyGrid">
+            {journeysInSelectedFolder.map((item) => (
+              <div
+                key={`${item.journey_id}::${item.version}`}
+                role="button"
+                tabIndex={0}
+                draggable
+                className={
+                  draggedJourneyKey === `${item.journey_id}::${item.version}`
+                    ? 'journeyCard dragging'
+                    : 'journeyCard'
+                }
+                onClick={() => applyJourneyToCanvas(item)}
+                onDragStart={(e) => onJourneyDragStart(e, item)}
+                onDragEnd={onJourneyDragEnd}
+              >
+                <strong>{item.name || item.journey_id}</strong>
+                <span>{item.journey_id} v{item.version}</span>
+                <span>{item.status}</span>
+                <small>Drag to folder to move</small>
+              </div>
+            ))}
+            {journeysInSelectedFolder.length === 0 && (
+              <p className="panelHint">Bu klasorde journey yok.</p>
+            )}
+          </section>
+          <div className="statusBar">{statusText}</div>
+        </main>
+      )}
+      {viewMode !== 'library' && <div className="statusBar">{statusText}</div>}
+      </div>
     </div>
   );
 }

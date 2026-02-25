@@ -29,6 +29,7 @@ const JourneyCreateSchema = z.object({
   version: z.number().int().positive().default(1),
   name: z.string().min(1),
   status: z.enum(['draft', 'published', 'archived']).default('published'),
+  folder_path: z.string().min(1).default('Workspace'),
   graph_json: z.record(z.any())
 });
 
@@ -37,6 +38,11 @@ const JourneyCloneSchema = z.object({
   target_version: z.number().int().positive().optional(),
   name: z.string().min(1).optional(),
   status: z.enum(['draft', 'published', 'archived']).default('published')
+});
+
+const JourneyMoveFolderSchema = z.object({
+  version: z.number().int().positive().optional(),
+  target_folder_path: z.string().min(1)
 });
 
 const CustomerProfileSchema = z.object({
@@ -173,10 +179,21 @@ async function ensureSchema() {
       version int not null,
       name text not null,
       status text not null default 'published',
+      folder_path text not null default 'Workspace',
       graph_json jsonb not null,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now(),
       primary key (journey_id, version)
+    )
+  `);
+  await pgClient.query(
+    `alter table journeys add column if not exists folder_path text not null default 'Workspace'`
+  );
+
+  await pgClient.query(`
+    create table if not exists journey_folders (
+      folder_path text primary key,
+      created_at timestamptz not null default now()
     )
   `);
 
@@ -292,15 +309,22 @@ app.post('/journeys', async (req, res) => {
   try {
     const input = JourneyCreateSchema.parse(req.body);
     await pgClient.query(
-      `insert into journeys (journey_id, version, name, status, graph_json)
-       values ($1, $2, $3, $4, $5)
+      `insert into journey_folders (folder_path)
+       values ($1)
+       on conflict (folder_path) do nothing`,
+      [input.folder_path]
+    );
+    await pgClient.query(
+      `insert into journeys (journey_id, version, name, status, folder_path, graph_json)
+       values ($1, $2, $3, $4, $5, $6)
        on conflict (journey_id, version)
        do update set
          name = excluded.name,
          status = excluded.status,
+         folder_path = excluded.folder_path,
          graph_json = excluded.graph_json,
          updated_at = now()`,
-      [input.journey_id, input.version, input.name, input.status, input.graph_json]
+      [input.journey_id, input.version, input.name, input.status, input.folder_path, input.graph_json]
     );
 
     res.status(200).json({ status: 'ok', journey_id: input.journey_id, version: input.version });
@@ -354,7 +378,7 @@ app.get('/journeys', async (_req, res) => {
 
     const listValues = [...values, limit, offset];
     const result = await pgClient.query(
-      `select journey_id, version, name, status, graph_json, created_at, updated_at
+      `select journey_id, version, name, status, folder_path, graph_json, created_at, updated_at
        from journeys
        ${whereClause}
        order by ${sortBy} ${sortOrder}, version desc
@@ -375,6 +399,40 @@ app.get('/journeys', async (_req, res) => {
     });
   } catch (error) {
     res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
+app.get('/journey-folders', async (_req, res) => {
+  try {
+    const result = await pgClient.query(
+      `select folder_path, created_at
+       from journey_folders
+       order by folder_path asc`
+    );
+    res.status(200).json({ status: 'ok', items: result.rows });
+  } catch (error) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
+app.post('/journey-folders', async (req, res) => {
+  try {
+    const folderPath = String(req.body?.folder_path || '').trim();
+    if (!folderPath) {
+      res.status(400).json({ status: 'error', message: 'folder_path is required' });
+      return;
+    }
+
+    await pgClient.query(
+      `insert into journey_folders (folder_path)
+       values ($1)
+       on conflict (folder_path) do nothing`,
+      [folderPath]
+    );
+
+    res.status(201).json({ status: 'ok', folder_path: folderPath });
+  } catch (error) {
+    res.status(400).json({ status: 'error', message: error.message });
   }
 });
 
@@ -446,7 +504,7 @@ app.post('/journeys/:journeyId/clone-version', async (req, res) => {
     const payload = JourneyCloneSchema.parse(req.body);
 
     const source = await pgClient.query(
-      `select journey_id, version, name, graph_json
+      `select journey_id, version, name, folder_path, graph_json
        from journeys
        where journey_id = $1 and version = $2
        limit 1`,
@@ -469,11 +527,25 @@ app.post('/journeys/:journeyId/clone-version', async (req, res) => {
       targetVersion = (maxVersion.rows[0]?.max_version || 0) + 1;
     }
 
+    await pgClient.query(
+      `insert into journey_folders (folder_path)
+       values ($1)
+       on conflict (folder_path) do nothing`,
+      [source.rows[0].folder_path || 'Workspace']
+    );
+
     const targetName = payload.name || source.rows[0].name;
     await pgClient.query(
-      `insert into journeys (journey_id, version, name, status, graph_json)
-       values ($1, $2, $3, $4, $5)`,
-      [journeyId, targetVersion, targetName, payload.status, source.rows[0].graph_json]
+      `insert into journeys (journey_id, version, name, status, folder_path, graph_json)
+       values ($1, $2, $3, $4, $5, $6)`,
+      [
+        journeyId,
+        targetVersion,
+        targetName,
+        payload.status,
+        source.rows[0].folder_path || 'Workspace',
+        source.rows[0].graph_json
+      ]
     );
 
     res.status(201).json({
@@ -491,6 +563,52 @@ app.post('/journeys/:journeyId/clone-version', async (req, res) => {
       res.status(409).json({ status: 'error', message: 'target version already exists' });
       return;
     }
+    res.status(400).json({ status: 'error', message: error.message });
+  }
+});
+
+app.patch('/journeys/:journeyId/move-folder', async (req, res) => {
+  try {
+    const journeyId = req.params.journeyId;
+    const payload = JourneyMoveFolderSchema.parse(req.body);
+    const folderPath = payload.target_folder_path.trim();
+
+    await pgClient.query(
+      `insert into journey_folders (folder_path)
+       values ($1)
+       on conflict (folder_path) do nothing`,
+      [folderPath]
+    );
+
+    const result = payload.version
+      ? await pgClient.query(
+          `update journeys
+           set folder_path = $1, updated_at = now()
+           where journey_id = $2 and version = $3`,
+          [folderPath, journeyId, payload.version]
+        )
+      : await pgClient.query(
+          `update journeys
+           set folder_path = $1, updated_at = now()
+           where journey_id = $2`,
+          [folderPath, journeyId]
+        );
+
+    if (result.rowCount === 0) {
+      res.status(404).json({ status: 'error', message: 'journey not found' });
+      return;
+    }
+
+    res.status(200).json({
+      status: 'ok',
+      moved: {
+        journey_id: journeyId,
+        version: payload.version || null,
+        target_folder_path: folderPath,
+        count: result.rowCount
+      }
+    });
+  } catch (error) {
     res.status(400).json({ status: 'error', message: error.message });
   }
 });
