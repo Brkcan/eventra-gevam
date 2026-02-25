@@ -595,6 +595,15 @@ function App() {
     }
   }, [fetchManualQueue, journeyId, manualReleaseCount, manualWaitNodeId, version]);
 
+  const toggleJourneyLogs = useCallback(async () => {
+    if (showJourneyLogs) {
+      setShowJourneyLogs(false);
+      return;
+    }
+    setShowJourneyLogs(true);
+    await fetchJourneyLogs();
+  }, [fetchJourneyLogs, showJourneyLogs]);
+
   const saveJourney = useCallback(async (statusOverride = null) => {
     setBusy(true);
     setStatusText('Journey kaydediliyor...');
@@ -1049,20 +1058,6 @@ function App() {
           </button>
           <button
             type="button"
-            onClick={() => setShowInspector((prev) => !prev)}
-            disabled={busy}
-          >
-            {showInspector ? 'Hide Inspector' : 'Inspector'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowJourneyLogs((prev) => !prev)}
-            disabled={busy}
-          >
-            {showJourneyLogs ? 'Hide Logs' : 'Show Logs'}
-          </button>
-          <button
-            type="button"
             onClick={() => setShowManualQueue((prev) => !prev)}
             disabled={busy}
           >
@@ -1070,10 +1065,14 @@ function App() {
           </button>
           <button
             type="button"
-            onClick={fetchJourneyLogs}
+            onClick={toggleJourneyLogs}
             disabled={busy || journeyLogsLoading}
           >
-            {journeyLogsLoading ? 'Loading Logs...' : 'Load Last 1h Logs'}
+            {showJourneyLogs
+              ? 'Hide Logs'
+              : journeyLogsLoading
+                ? 'Loading Logs...'
+                : 'Load Last 1h Logs'}
           </button>
           <button type="button" onClick={newJourney} disabled={busy}>
             New
