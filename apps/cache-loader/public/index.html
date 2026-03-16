@@ -18,6 +18,11 @@
       body { margin: 0; background: var(--bg); color: var(--text); }
       .top { background: var(--primary); color: #fff; padding: 14px 18px; font-weight: 700; }
       .wrap { padding: 16px; display: grid; gap: 12px; }
+      .tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+      .tabBtn { width: auto; min-width: 170px; }
+      .tabBtn.active { background: linear-gradient(180deg, var(--primary), #0a2e7f); color: #fff; border-color: #0a2e7f; }
+      .pageSection { display: grid; gap: 12px; }
+      .pageSection.hidden { display: none; }
       .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
       .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; gap: 8px; }
       .card h3 { margin: 0; font-size: 16px; }
@@ -41,8 +46,12 @@
     <div class="top">Eventra Cache Loader</div>
     <div class="wrap">
       <div id="status" class="status">Hazir</div>
+      <div class="tabs">
+        <button id="tabConnections" class="tabBtn active" type="button">DB Connections</button>
+        <button id="tabJobs" class="tabBtn" type="button">Scheduler Jobs</button>
+      </div>
 
-      <div class="grid">
+      <section id="connectionsSection" class="pageSection">
         <section class="card">
           <h3>DB Connection Ekle</h3>
           <div class="row">
@@ -60,7 +69,18 @@
           <label><input id="c_ssl" type="checkbox" /> SSL</label>
           <button class="primary" id="btnCreateConn">Connection Kaydet</button>
         </section>
+        <section class="card">
+          <h3>Connections</h3>
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Host</th><th>DB</th><th>User</th><th>SSL</th><th>Islem</th></tr>
+            </thead>
+            <tbody id="connectionsBody"></tbody>
+          </table>
+        </section>
+      </section>
 
+      <section id="jobsSection" class="pageSection hidden">
         <section class="card">
           <h3>Scheduler Job Ekle (Gunluk)</h3>
           <div class="row">
@@ -86,38 +106,28 @@
           <label>Query Preview</label>
           <pre id="queryPreview" class="mono" style="max-height:220px;overflow:auto;background:#f7faff;border:1px solid #d6deee;border-radius:10px;padding:8px;margin:0;">-</pre>
         </section>
-      </div>
 
-      <section class="card">
-        <h3>Connections</h3>
-        <table>
-          <thead>
-            <tr><th>Name</th><th>Host</th><th>DB</th><th>User</th><th>SSL</th><th>Islem</th></tr>
-          </thead>
-          <tbody id="connectionsBody"></tbody>
-        </table>
-      </section>
+        <section class="card">
+          <h3>Jobs</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th><th>Dataset</th><th>Time</th><th>TZ</th><th>Enabled</th><th>Last</th><th>Status</th><th>Islem</th>
+              </tr>
+            </thead>
+            <tbody id="jobsBody"></tbody>
+          </table>
+        </section>
 
-      <section class="card">
-        <h3>Jobs</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th><th>Dataset</th><th>Time</th><th>TZ</th><th>Enabled</th><th>Last</th><th>Status</th><th>Islem</th>
-            </tr>
-          </thead>
-          <tbody id="jobsBody"></tbody>
-        </table>
-      </section>
-
-      <section class="card">
-        <h3>Son Calismalar</h3>
-        <table>
-          <thead>
-            <tr><th>Job</th><th>Start</th><th>Finish</th><th>Status</th><th>Rows</th><th>Error</th></tr>
-          </thead>
-          <tbody id="runsBody"></tbody>
-        </table>
+        <section class="card">
+          <h3>Son Calismalar</h3>
+          <table>
+            <thead>
+              <tr><th>Job</th><th>Start</th><th>Finish</th><th>Status</th><th>Rows</th><th>Error</th></tr>
+            </thead>
+            <tbody id="runsBody"></tbody>
+          </table>
+        </section>
       </section>
     </div>
 
@@ -128,9 +138,20 @@
       const runsBody = document.getElementById('runsBody');
       const connSelect = document.getElementById('j_conn');
       const queryPreview = document.getElementById('queryPreview');
+      const tabConnections = document.getElementById('tabConnections');
+      const tabJobs = document.getElementById('tabJobs');
+      const connectionsSection = document.getElementById('connectionsSection');
+      const jobsSection = document.getElementById('jobsSection');
 
       function setStatus(text) { statusEl.textContent = text; }
       function fmt(ts) { return ts ? new Date(ts).toLocaleString('tr-TR') : '-'; }
+      function setActiveTab(tab) {
+        const isConnections = tab === 'connections';
+        tabConnections.classList.toggle('active', isConnections);
+        tabJobs.classList.toggle('active', !isConnections);
+        connectionsSection.classList.toggle('hidden', !isConnections);
+        jobsSection.classList.toggle('hidden', isConnections);
+      }
 
       async function api(path, options = {}) {
         const res = await fetch(path, options);
@@ -330,6 +351,9 @@
           setStatus(`Silme hatasi: ${error.message}`);
         }
       });
+
+      tabConnections.addEventListener('click', () => setActiveTab('connections'));
+      tabJobs.addEventListener('click', () => setActiveTab('jobs'));
 
       refreshAll().catch((error) => setStatus(`Yukleme hatasi: ${error.message}`));
     </script>
