@@ -11,6 +11,8 @@
     "dev:rule-engine": "npm --workspace @eventra/rule-engine run dev",
     "dev:frontend": "npm --workspace @eventra/frontend run dev",
     "start:api": "npm --workspace @eventra/api run start",
-    "start:rule-engine": "npm --workspace @eventra/rule-engine run start"
+    "start:rule-engine": "npm --workspace @eventra/rule-engine run start",
+    "dev:cache-loader": "npm --workspace @eventra/cache-loader run dev",
+    "start:cache-loader": "npm --workspace @eventra/cache-loader run start"
   }
 }

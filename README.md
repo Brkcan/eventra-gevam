@@ -37,6 +37,7 @@ cp .env.example .env
 npm run dev:api
 npm run dev:rule-engine
 npm run dev:frontend
+npm run dev:cache-loader
 ```
 
 ## Ornek Event Gonderimi
@@ -53,6 +54,34 @@ curl -X POST http://localhost:3001/ingest \
 ```
 
 Bu event `event.raw` topic'ine gider. Rule engine kurala uyarsa `action_log` tablosuna kayit atar ve `action.triggered` topic'ine aksiyon yazar.
+
+## Cache Loader (Ayrı Uygulama)
+
+`apps/cache-loader` ayrı bir scheduler uygulamasıdır.
+
+Amac:
+- Dış DB'ye `SELECT` query çalıştırmak
+- Sonucu Redis cache dataset olarak yazmak
+- Günlük belirlenen saatte otomatik çalıştırmak (örn: `07:00`)
+
+UI:
+- `http://localhost:3010`
+
+Akış:
+1. Connection ekle (host/port/db/user/pass)
+2. Job ekle:
+   - `dataset_key`
+   - `sql_query` (sadece SELECT)
+   - `key_column`
+   - `run_time` (`HH:mm`)
+   - `timezone` (örn `Europe/Istanbul`)
+3. `Run Now` ile manuel test et
+4. Scheduler her gün belirtilen saatte otomatik çalıştırır
+
+Redis yazımı:
+- Hash: `cache:dataset:{dataset_key}`
+- Meta: `cache:dataset:{dataset_key}:meta`
+- Pub/Sub: `cache.updated`
 
 ## Journey API
 

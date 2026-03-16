@@ -19,6 +19,7 @@ const NAV_ITEMS = ['Scenarios', 'Catalogues', 'Management', 'Dashboards'];
 function defaultLabelForKind(nodeKind) {
   if (nodeKind === 'trigger') return 'Trigger: cart_add';
   if (nodeKind === 'wait') return 'Wait: 30m';
+  if (nodeKind === 'cache_lookup') return 'Cache Lookup';
   if (nodeKind === 'http_call') return 'HTTP Call';
   if (nodeKind === 'condition') return 'Condition: purchase yok';
   if (nodeKind === 'action') return 'Action: Email gonder';
@@ -39,6 +40,11 @@ function normalizeNodeData(data = {}, fallbackId = '') {
     event_type: data.event_type || 'cart_add',
     wait_minutes: Number(data.wait_minutes || 30),
     manual_release: Boolean(data.manual_release),
+    cache_dataset_key: data.cache_dataset_key || '',
+    cache_lookup_key_template: data.cache_lookup_key_template || '{{customer_id}}',
+    cache_target_path: data.cache_target_path || 'external.cache.item',
+    cache_on_miss: data.cache_on_miss || 'continue',
+    cache_default_json: data.cache_default_json || '{}',
     http_method: data.http_method || 'POST',
     endpoint_id: data.endpoint_id || '',
     http_url: data.http_url || '',
@@ -96,6 +102,20 @@ function parseCsvList(raw) {
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function toExpressionLiteral(rawValue) {
+  const trimmed = String(rawValue ?? '').trim();
+  if (!trimmed) {
+    return '""';
+  }
+  if (trimmed === 'true' || trimmed === 'false') {
+    return trimmed;
+  }
+  if (!Number.isNaN(Number(trimmed))) {
+    return String(Number(trimmed));
+  }
+  return `"${trimmed.replace(/"/g, '\\"')}"`;
 }
 
 function createNode(nodeKind, position, id) {
@@ -170,27 +190,33 @@ const defaultNodes = [
   },
   {
     id: 'http_call',
-    position: { x: 600, y: 120 },
+    position: { x: 860, y: 120 },
     data: normalizeNodeData({ node_kind: 'http_call' }, 'http_call')
   },
   {
     id: 'condition',
-    position: { x: 860, y: 120 },
+    position: { x: 1120, y: 120 },
     data: normalizeNodeData({ node_kind: 'condition' }, 'condition')
   },
   {
     id: 'action',
-    position: { x: 1120, y: 120 },
+    position: { x: 1380, y: 120 },
     data: normalizeNodeData({ node_kind: 'action' }, 'action'),
     type: 'output'
+  },
+  {
+    id: 'cache_lookup',
+    position: { x: 600, y: 120 },
+    data: normalizeNodeData({ node_kind: 'cache_lookup' }, 'cache_lookup')
   }
 ];
 
 const defaultEdges = [
   { id: 'e1', source: 'trigger', target: 'wait', animated: true },
-  { id: 'e2', source: 'wait', target: 'http_call' },
-  { id: 'e3', source: 'http_call', target: 'condition' },
-  { id: 'e4', source: 'condition', target: 'action' }
+  { id: 'e2', source: 'wait', target: 'cache_lookup' },
+  { id: 'e3', source: 'cache_lookup', target: 'http_call' },
+  { id: 'e4', source: 'http_call', target: 'condition' },
+  { id: 'e5', source: 'condition', target: 'action' }
 ];
 
 function getLatestJourney(items, journeyId) {
@@ -237,6 +263,15 @@ function App() {
     top_by_events: [],
     top_by_failures: []
   });
+  const [dashboardCacheHealth, setDashboardCacheHealth] = useState({
+    summary: {
+      datasets_total: 0,
+      datasets_loaded_today: 0,
+      success_runs_today: 0,
+      total_rows_last_success: 0
+    },
+    items: []
+  });
   const [dashboardLastUpdated, setDashboardLastUpdated] = useState('');
   const [globalPauseEnabled, setGlobalPauseEnabled] = useState(false);
   const [releaseControls, setReleaseControls] = useState([]);
@@ -247,6 +282,7 @@ function App() {
   const [catalogueSegments, setCatalogueSegments] = useState([]);
   const [catalogueTemplates, setCatalogueTemplates] = useState([]);
   const [catalogueEndpoints, setCatalogueEndpoints] = useState([]);
+  const [catalogueCacheDatasets, setCatalogueCacheDatasets] = useState([]);
   const [eventTypeForm, setEventTypeForm] = useState({
     event_type: '',
     description: '',
@@ -282,6 +318,11 @@ function App() {
     is_active: true
   });
   const [selectedJourneyKey, setSelectedJourneyKey] = useState('');
+  const [exprBuilderDatasetKey, setExprBuilderDatasetKey] = useState('');
+  const [exprBuilderColumn, setExprBuilderColumn] = useState('');
+  const [exprBuilderOperator, setExprBuilderOperator] = useState('>=');
+  const [exprBuilderValueType, setExprBuilderValueType] = useState('payload');
+  const [exprBuilderValueInput, setExprBuilderValueInput] = useState('amount');
   const [draggedJourneyKey, setDraggedJourneyKey] = useState('');
   const [activeDropFolder, setActiveDropFolder] = useState('');
   const draggedJourneyKeyRef = useRef('');
@@ -326,6 +367,58 @@ function App() {
     () => catalogueEndpoints.filter((item) => Boolean(item?.is_active)),
     [catalogueEndpoints]
   );
+  const activeCacheDatasetOptions = useMemo(
+    () => (catalogueCacheDatasets || []).map((item) => String(item.dataset_key)).filter(Boolean),
+    [catalogueCacheDatasets]
+  );
+  const cacheDatasetMap = useMemo(
+    () =>
+      new Map(
+        (catalogueCacheDatasets || [])
+          .filter((item) => item?.dataset_key)
+          .map((item) => [String(item.dataset_key), item])
+      ),
+    [catalogueCacheDatasets]
+  );
+  const cacheLookupNodes = useMemo(
+    () => nodes.filter((node) => normalizeNodeData(node.data, node.id).node_kind === 'cache_lookup'),
+    [nodes]
+  );
+  const selectedBuilderDatasetColumns = useMemo(() => {
+    const item = cacheDatasetMap.get(String(exprBuilderDatasetKey || ''));
+    const cols = Array.isArray(item?.columns) ? item.columns : [];
+    return cols.map((col) => String(col)).filter(Boolean);
+  }, [cacheDatasetMap, exprBuilderDatasetKey]);
+  const selectedBuilderDatasetColumnTypes = useMemo(() => {
+    const item = cacheDatasetMap.get(String(exprBuilderDatasetKey || ''));
+    const raw = item?.column_types;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return {};
+    }
+    return raw;
+  }, [cacheDatasetMap, exprBuilderDatasetKey]);
+  const selectedBuilderColumnType = useMemo(() => {
+    return String(selectedBuilderDatasetColumnTypes?.[exprBuilderColumn] || 'string');
+  }, [exprBuilderColumn, selectedBuilderDatasetColumnTypes]);
+  const availableExprOperators = useMemo(() => {
+    const t = selectedBuilderColumnType;
+    if (t === 'number' || t === 'integer') {
+      return ['>=', '<=', '==', '!=', '>', '<'];
+    }
+    if (t === 'boolean') {
+      return ['==', '!='];
+    }
+    if (t === 'date') {
+      return ['>=', '<=', '==', '!=', '>', '<'];
+    }
+    return ['==', '!=', 'contains'];
+  }, [selectedBuilderColumnType]);
+  const builderCacheTargetPath = useMemo(() => {
+    const configuredPath = cacheLookupNodes
+      .map((node) => normalizeNodeData(node.data, node.id).cache_target_path)
+      .find((value) => String(value || '').trim());
+    return configuredPath || 'external.cache.item';
+  }, [cacheLookupNodes]);
   const topEventMax = useMemo(() => {
     const values = (dashboardJourneyPerf?.top_by_events || []).map((item) =>
       Number(item.triggered_24h || 0)
@@ -515,6 +608,49 @@ function App() {
     },
     [selectedEdgeId, setEdges]
   );
+
+  const buildEdgeExpression = useCallback(() => {
+    if (!selectedEdgeId) {
+      return;
+    }
+    const datasetKey = String(exprBuilderDatasetKey || '').trim();
+    if (!datasetKey) {
+      setStatusText('Expression builder icin dataset secilmeli.');
+      return;
+    }
+    const column = String(exprBuilderColumn || '').trim();
+    if (!column) {
+      setStatusText('Expression builder icin kolon secilmeli.');
+      return;
+    }
+
+    const operator = String(exprBuilderOperator || '>=').trim();
+    const left = `${builderCacheTargetPath}.${column}`;
+    let right = '';
+    if (exprBuilderValueType === 'static') {
+      right = toExpressionLiteral(exprBuilderValueInput);
+    } else {
+      const sourcePath = String(exprBuilderValueInput || column).trim();
+      if (!sourcePath) {
+        setStatusText('payload/attributes degeri bos olamaz.');
+        return;
+      }
+      right = `${exprBuilderValueType}.${sourcePath}`;
+    }
+
+    const expression = `${left} ${operator} ${right}`;
+    updateSelectedEdge({ expression });
+    setStatusText(`Expression olusturuldu: ${expression}`);
+  }, [
+    builderCacheTargetPath,
+    exprBuilderColumn,
+    exprBuilderDatasetKey,
+    exprBuilderOperator,
+    exprBuilderValueInput,
+    exprBuilderValueType,
+    selectedEdgeId,
+    updateSelectedEdge
+  ]);
 
   const applyJourneyToCanvas = useCallback(
     (journey) => {
@@ -732,6 +868,31 @@ function App() {
     }
   }, []);
 
+  const fetchDashboardCacheHealth = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/dashboard/cache-health`);
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.message || `Dashboard cache health failed: ${response.status}`);
+      }
+      const body = await response.json();
+      setDashboardCacheHealth(
+        body.item || {
+          summary: {
+            datasets_total: 0,
+            datasets_loaded_today: 0,
+            success_runs_today: 0,
+            total_rows_last_success: 0
+          },
+          items: []
+        }
+      );
+      setDashboardLastUpdated(new Date().toLocaleString('tr-TR'));
+    } catch (error) {
+      setStatusText(`Cache health hatasi: ${error.message}`);
+    }
+  }, []);
+
   const fetchManagementData = useCallback(async () => {
     setManagementLoading(true);
     try {
@@ -818,12 +979,13 @@ function App() {
   const fetchCatalogues = useCallback(async () => {
     setCataloguesLoading(true);
     try {
-      const [summaryRes, eventTypesRes, segmentsRes, templatesRes, endpointsRes] = await Promise.all([
+      const [summaryRes, eventTypesRes, segmentsRes, templatesRes, endpointsRes, cacheDatasetsRes] = await Promise.all([
         fetch(`${API_BASE_URL}/catalogues/summary`),
         fetch(`${API_BASE_URL}/catalogues/event-types?limit=200&offset=0`),
         fetch(`${API_BASE_URL}/catalogues/segments?limit=200&offset=0`),
         fetch(`${API_BASE_URL}/catalogues/templates?limit=200&offset=0`),
-        fetch(`${API_BASE_URL}/catalogues/endpoints?limit=200&offset=0`)
+        fetch(`${API_BASE_URL}/catalogues/endpoints?limit=200&offset=0`),
+        fetch(`${API_BASE_URL}/catalogues/cache-datasets`)
       ]);
 
       if (!summaryRes.ok) throw new Error(`Catalogue summary failed: ${summaryRes.status}`);
@@ -831,13 +993,15 @@ function App() {
       if (!segmentsRes.ok) throw new Error(`Segments failed: ${segmentsRes.status}`);
       if (!templatesRes.ok) throw new Error(`Templates failed: ${templatesRes.status}`);
       if (!endpointsRes.ok) throw new Error(`Endpoints failed: ${endpointsRes.status}`);
+      if (!cacheDatasetsRes.ok) throw new Error(`Cache datasets failed: ${cacheDatasetsRes.status}`);
 
-      const [summaryBody, eventTypesBody, segmentsBody, templatesBody, endpointsBody] = await Promise.all([
+      const [summaryBody, eventTypesBody, segmentsBody, templatesBody, endpointsBody, cacheDatasetsBody] = await Promise.all([
         summaryRes.json(),
         eventTypesRes.json(),
         segmentsRes.json(),
         templatesRes.json(),
-        endpointsRes.json()
+        endpointsRes.json(),
+        cacheDatasetsRes.json()
       ]);
 
       setCatalogueSummary(summaryBody.item || null);
@@ -845,6 +1009,7 @@ function App() {
       setCatalogueSegments(Array.isArray(segmentsBody.items) ? segmentsBody.items : []);
       setCatalogueTemplates(Array.isArray(templatesBody.items) ? templatesBody.items : []);
       setCatalogueEndpoints(Array.isArray(endpointsBody.items) ? endpointsBody.items : []);
+      setCatalogueCacheDatasets(Array.isArray(cacheDatasetsBody.items) ? cacheDatasetsBody.items : []);
     } catch (error) {
       setStatusText(`Catalogues fetch hatasi: ${error.message}`);
     } finally {
@@ -1042,6 +1207,12 @@ function App() {
       const finalStatus = statusOverride || journeyStatus;
       for (const node of nodes) {
         const data = normalizeNodeData(node.data, node.id);
+        if (data.node_kind === 'cache_lookup' && data.cache_on_miss === 'default') {
+          const defaultParsed = parseJsonText(data.cache_default_json || '{}');
+          if (!defaultParsed.ok) {
+            throw new Error(`Invalid cache_default_json on ${node.id}`);
+          }
+        }
         if (data.node_kind !== 'http_call') {
           continue;
         }
@@ -1428,7 +1599,8 @@ function App() {
     }
     fetchDashboardKpi();
     fetchDashboardJourneyPerformance();
-  }, [activeMenu, fetchDashboardJourneyPerformance, fetchDashboardKpi]);
+    fetchDashboardCacheHealth();
+  }, [activeMenu, fetchDashboardCacheHealth, fetchDashboardJourneyPerformance, fetchDashboardKpi]);
 
   useEffect(() => {
     if (activeMenu !== 'Management') {
@@ -1482,6 +1654,57 @@ function App() {
       setManualWaitNodeId(waitNodes[0].id);
     }
   }, [manualWaitNodeId, waitNodes]);
+
+  useEffect(() => {
+    if (!selectedEdgeId) {
+      return;
+    }
+    const configuredDataset =
+      cacheLookupNodes
+        .map((node) => normalizeNodeData(node.data, node.id).cache_dataset_key)
+        .find((key) => String(key || '').trim()) || '';
+    const fallbackDataset = configuredDataset || activeCacheDatasetOptions[0] || '';
+    if (
+      fallbackDataset &&
+      (!exprBuilderDatasetKey || !activeCacheDatasetOptions.includes(exprBuilderDatasetKey))
+    ) {
+      setExprBuilderDatasetKey(fallbackDataset);
+    }
+  }, [activeCacheDatasetOptions, cacheLookupNodes, exprBuilderDatasetKey, selectedEdgeId]);
+
+  useEffect(() => {
+    if (!selectedEdgeId) {
+      return;
+    }
+    if (selectedBuilderDatasetColumns.length === 0) {
+      return;
+    }
+    if (!exprBuilderColumn || !selectedBuilderDatasetColumns.includes(exprBuilderColumn)) {
+      setExprBuilderColumn(selectedBuilderDatasetColumns[0]);
+    }
+  }, [exprBuilderColumn, selectedBuilderDatasetColumns, selectedEdgeId]);
+
+  useEffect(() => {
+    if (!selectedEdgeId) {
+      return;
+    }
+    if (!availableExprOperators.includes(exprBuilderOperator)) {
+      setExprBuilderOperator(availableExprOperators[0] || '==');
+    }
+  }, [availableExprOperators, exprBuilderOperator, selectedEdgeId]);
+
+  useEffect(() => {
+    if (!selectedEdgeId) {
+      return;
+    }
+    if (exprBuilderValueType === 'static') {
+      return;
+    }
+    const fallback = String(exprBuilderColumn || '').trim();
+    if (fallback && !String(exprBuilderValueInput || '').trim()) {
+      setExprBuilderValueInput(fallback);
+    }
+  }, [exprBuilderColumn, exprBuilderValueInput, exprBuilderValueType, selectedEdgeId]);
 
   const selectedData = selectedNode ? normalizeNodeData(selectedNode.data, selectedNode.id) : null;
   const headersValidation =
@@ -1619,6 +1842,14 @@ function App() {
             <button type="button" title="Add Wait" aria-label="Add Wait" onClick={() => addNode('wait')}>
               <span>W</span> Wait
             </button>
+            <button
+              type="button"
+              title="Add Cache Lookup"
+              aria-label="Add Cache Lookup"
+              onClick={() => addNode('cache_lookup')}
+            >
+              <span>K</span> Cache
+            </button>
             <button type="button" title="Add HTTP Call" aria-label="Add HTTP Call" onClick={() => addNode('http_call')}>
               <span>H</span> HTTP
             </button>
@@ -1680,6 +1911,7 @@ function App() {
                 >
                   <option value="trigger">trigger</option>
                   <option value="wait">wait</option>
+                  <option value="cache_lookup">cache_lookup</option>
                   <option value="http_call">http_call</option>
                   <option value="condition">condition</option>
                   <option value="action">action</option>
@@ -1864,6 +2096,77 @@ function App() {
                 </>
               )}
 
+              {selectedData.node_kind === 'cache_lookup' && (
+                <>
+                  <label>
+                    cache_dataset_key
+                    <select
+                      value={selectedData.cache_dataset_key || ''}
+                      onChange={(e) =>
+                        updateSelectedNode({ cache_dataset_key: e.target.value })
+                      }
+                    >
+                      <option value="">Sec...</option>
+                      {activeCacheDatasetOptions.map((datasetKey) => (
+                        <option key={datasetKey} value={datasetKey}>
+                          {datasetKey}
+                        </option>
+                      ))}
+                      {!activeCacheDatasetOptions.includes(
+                        String(selectedData.cache_dataset_key || '')
+                      ) &&
+                        selectedData.cache_dataset_key && (
+                          <option value={selectedData.cache_dataset_key}>
+                            {selectedData.cache_dataset_key}
+                          </option>
+                        )}
+                    </select>
+                  </label>
+                  <label>
+                    cache_lookup_key_template
+                    <input
+                      placeholder="{{payload.merchant_id}}"
+                      value={selectedData.cache_lookup_key_template}
+                      onChange={(e) =>
+                        updateSelectedNode({ cache_lookup_key_template: e.target.value })
+                      }
+                    />
+                  </label>
+                  <label>
+                    cache_target_path
+                    <input
+                      placeholder="external.cache.item"
+                      value={selectedData.cache_target_path}
+                      onChange={(e) =>
+                        updateSelectedNode({ cache_target_path: e.target.value })
+                      }
+                    />
+                  </label>
+                  <label>
+                    cache_on_miss
+                    <select
+                      value={selectedData.cache_on_miss}
+                      onChange={(e) => updateSelectedNode({ cache_on_miss: e.target.value })}
+                    >
+                      <option value="continue">continue</option>
+                      <option value="default">default</option>
+                      <option value="fail">fail</option>
+                    </select>
+                  </label>
+                  {selectedData.cache_on_miss === 'default' && (
+                    <label>
+                      cache_default_json
+                      <textarea
+                        value={selectedData.cache_default_json}
+                        onChange={(e) =>
+                          updateSelectedNode({ cache_default_json: e.target.value })
+                        }
+                      />
+                    </label>
+                  )}
+                </>
+              )}
+
               {selectedData.node_kind === 'condition' && (
                 <>
                   <label>
@@ -2038,6 +2341,93 @@ function App() {
                   Ornek: <code>exists(payload.amount)</code>, <code>{'external.http.normalized.score >= 700'}</code>, <code>external.http.response.message contains "approved"</code>
                 </small>
               </label>
+              <div className="expressionBuilder">
+                <div className="expressionBuilderHead">Expression Builder (Cache)</div>
+                {activeCacheDatasetOptions.length === 0 && (
+                  <small className="fieldHelp">
+                    Cache dataset bulunamadi. Once Catalogues &gt; Cache Loader ile dataset yukleyin.
+                  </small>
+                )}
+                {activeCacheDatasetOptions.length > 0 && (
+                  <>
+                    <label>
+                      dataset
+                      <select
+                        value={exprBuilderDatasetKey}
+                        onChange={(e) => setExprBuilderDatasetKey(e.target.value)}
+                      >
+                        <option value="">Sec...</option>
+                        {activeCacheDatasetOptions.map((datasetKey) => (
+                          <option key={datasetKey} value={datasetKey}>
+                            {datasetKey}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      column
+                      <select
+                        value={exprBuilderColumn}
+                        onChange={(e) => setExprBuilderColumn(e.target.value)}
+                      >
+                        <option value="">Sec...</option>
+                        {selectedBuilderDatasetColumns.map((column) => (
+                          <option key={column} value={column}>
+                            {column}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      operator
+                      <select
+                        value={exprBuilderOperator}
+                        onChange={(e) => setExprBuilderOperator(e.target.value)}
+                      >
+                        {availableExprOperators.map((op) => (
+                          <option key={op} value={op}>
+                            {op}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <small className="fieldHelp">
+                      Kolon tipi: <code>{selectedBuilderColumnType}</code>
+                    </small>
+                    <label>
+                      value_type
+                      <select
+                        value={exprBuilderValueType}
+                        onChange={(e) => setExprBuilderValueType(e.target.value)}
+                      >
+                        <option value="payload">payload</option>
+                        <option value="attributes">attributes</option>
+                        <option value="static">static</option>
+                      </select>
+                    </label>
+                    <label>
+                      {exprBuilderValueType === 'static' ? 'static_value' : `${exprBuilderValueType}_path`}
+                      <input
+                        placeholder={
+                          exprBuilderValueType === 'static'
+                            ? '1000 veya approved'
+                            : exprBuilderColumn || 'amount'
+                        }
+                        value={exprBuilderValueInput}
+                        onChange={(e) => setExprBuilderValueInput(e.target.value)}
+                      />
+                    </label>
+                    <div className="expressionBuilderActions">
+                      <button type="button" onClick={buildEdgeExpression}>
+                        Expression Olustur
+                      </button>
+                    </div>
+                    <small className="fieldHelp">
+                      Sol taraf otomatik: <code>{builderCacheTargetPath}.{exprBuilderColumn || 'column'}</code>
+                    </small>
+                  </>
+                )}
+              </div>
               <label>
                 rate_limit_per_day
                 <input
@@ -2807,7 +3197,11 @@ function App() {
             <button
               type="button"
               onClick={async () => {
-                await Promise.all([fetchDashboardKpi(), fetchDashboardJourneyPerformance()]);
+                await Promise.all([
+                  fetchDashboardKpi(),
+                  fetchDashboardJourneyPerformance(),
+                  fetchDashboardCacheHealth()
+                ]);
               }}
               disabled={dashboardLoading}
             >
@@ -2867,6 +3261,40 @@ function App() {
               </div>
             </article>
           </section>
+          <section className="dashboardGrid">
+            <article className="kpiCard dashboardCard">
+              <div className="dashboardCardHead">
+                <span className="dashboardIcon">CH</span>
+                <h3>Cache Dataset</h3>
+              </div>
+              <div className="kpiValue">{dashboardCacheHealth?.summary?.datasets_total ?? 0}</div>
+              <small>Toplam tanimli dataset</small>
+            </article>
+            <article className="kpiCard dashboardCard">
+              <div className="dashboardCardHead">
+                <span className="dashboardIcon">TD</span>
+                <h3>Bugun Yuklenen</h3>
+              </div>
+              <div className="kpiValue">{dashboardCacheHealth?.summary?.datasets_loaded_today ?? 0}</div>
+              <small>Bugun en az 1 basarili yukleme alan dataset</small>
+            </article>
+            <article className="kpiCard dashboardCard">
+              <div className="dashboardCardHead">
+                <span className="dashboardIcon">RN</span>
+                <h3>Bugun Basarili Run</h3>
+              </div>
+              <div className="kpiValue">{dashboardCacheHealth?.summary?.success_runs_today ?? 0}</div>
+              <small>Cache loader bugun success run sayisi</small>
+            </article>
+            <article className="kpiCard dashboardCard">
+              <div className="dashboardCardHead">
+                <span className="dashboardIcon">RW</span>
+                <h3>Son Satir Toplami</h3>
+              </div>
+              <div className="kpiValue">{dashboardCacheHealth?.summary?.total_rows_last_success ?? 0}</div>
+              <small>Tum datasetlerin son basarili row_count toplami</small>
+            </article>
+          </section>
           <section className="dashboardSplit">
             <article className="kpiCard dashboardCard">
               <h3>En Cok Event Alan Journey</h3>
@@ -2916,6 +3344,41 @@ function App() {
                 )}
               </div>
             </article>
+          </section>
+          <section className="dashboardTableWrap dashboardTableCard">
+            <div className="dashboardTableHead">
+              <h3>Cache Health Detay</h3>
+              <small>Dataset bazinda son yukleme durumu ve bugun yuklenme bilgisi</small>
+            </div>
+            <table className="journeyLogsTable">
+              <thead>
+                <tr>
+                  <th>Dataset</th>
+                  <th>Bugun Yuklendi mi</th>
+                  <th>Son Basarili Yukleme</th>
+                  <th>Son Basarili Satir</th>
+                  <th>Son Run Status</th>
+                  <th>Son Run Tarihi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(dashboardCacheHealth?.items || []).map((item) => (
+                  <tr key={item.dataset_key}>
+                    <td>{item.dataset_key}</td>
+                    <td>{item.loaded_today ? 'Evet' : 'Hayir'}</td>
+                    <td>{formatLogDate(item.last_success_at)}</td>
+                    <td>{item.last_success_row_count ?? 0}</td>
+                    <td>{item.last_run_status || '-'}</td>
+                    <td>{formatLogDate(item.last_run_at)}</td>
+                  </tr>
+                ))}
+                {(dashboardCacheHealth?.items || []).length === 0 && (
+                  <tr>
+                    <td colSpan={6}>Cache dataset verisi yok.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </section>
           <section className="dashboardTableWrap dashboardTableCard">
             <div className="dashboardTableHead">

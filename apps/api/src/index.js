@@ -132,6 +132,14 @@ function parseOffset(value) {
   return Math.floor(n);
 }
 
+function parseJsonSafe(raw, fallback = null) {
+  try {
+    return JSON.parse(String(raw ?? ''));
+  } catch {
+    return fallback;
+  }
+}
+
 async function resolveJourneyVersion(journeyId, versionRaw) {
   if (versionRaw !== undefined && versionRaw !== null && String(versionRaw).trim() !== '') {
     const parsed = Number(versionRaw);
@@ -736,6 +744,102 @@ app.get('/dashboard/journey-performance', async (_req, res) => {
   }
 });
 
+app.get('/dashboard/cache-health', async (_req, res) => {
+  try {
+    const summaryResult = await pgClient.query(
+      `with latest as (
+         select
+           j.dataset_key,
+           max(r.started_at) as last_run_at,
+           max(r.started_at) filter (where r.status = 'success') as last_success_at
+         from cache_loader_jobs j
+         left join cache_loader_runs r on r.job_id = j.id
+         group by j.dataset_key
+       ),
+       latest_success as (
+         select distinct on (j.dataset_key)
+           j.dataset_key,
+           r.row_count,
+           r.started_at
+         from cache_loader_jobs j
+         join cache_loader_runs r on r.job_id = j.id
+         where r.status = 'success'
+         order by j.dataset_key, r.started_at desc
+       )
+       select
+         (select count(*)::int from latest) as datasets_total,
+         (select count(*)::int from latest where last_success_at >= date_trunc('day', now())) as datasets_loaded_today,
+         (select count(*)::int from cache_loader_runs where status = 'success' and started_at >= date_trunc('day', now())) as success_runs_today,
+         coalesce((select sum(row_count)::int from latest_success), 0) as total_rows_last_success`
+    );
+
+    const itemsResult = await pgClient.query(
+      `with latest_success as (
+         select distinct on (j.dataset_key)
+           j.dataset_key,
+           r.started_at as last_success_at,
+           r.row_count as last_success_row_count
+         from cache_loader_jobs j
+         join cache_loader_runs r on r.job_id = j.id
+         where r.status = 'success'
+         order by j.dataset_key, r.started_at desc
+       ),
+       latest_run as (
+         select distinct on (j.dataset_key)
+           j.dataset_key,
+           r.started_at as last_run_at,
+           r.status as last_run_status,
+           r.error_text as last_error
+         from cache_loader_jobs j
+         left join cache_loader_runs r on r.job_id = j.id
+         order by j.dataset_key, r.started_at desc nulls last
+       )
+       select
+         k.dataset_key,
+         lr.last_run_at,
+         lr.last_run_status,
+         ls.last_success_at,
+         coalesce(ls.last_success_row_count, 0)::int as last_success_row_count,
+         coalesce(ls.last_success_at >= date_trunc('day', now()), false) as loaded_today,
+         lr.last_error
+       from (select distinct dataset_key from cache_loader_jobs) k
+       left join latest_run lr on lr.dataset_key = k.dataset_key
+       left join latest_success ls on ls.dataset_key = k.dataset_key
+       order by k.dataset_key asc`
+    );
+
+    res.status(200).json({
+      status: 'ok',
+      item: {
+        summary: summaryResult.rows[0] || {
+          datasets_total: 0,
+          datasets_loaded_today: 0,
+          success_runs_today: 0,
+          total_rows_last_success: 0
+        },
+        items: itemsResult.rows || []
+      }
+    });
+  } catch (error) {
+    if (error?.code === '42P01') {
+      res.status(200).json({
+        status: 'ok',
+        item: {
+          summary: {
+            datasets_total: 0,
+            datasets_loaded_today: 0,
+            success_runs_today: 0,
+            total_rows_last_success: 0
+          },
+          items: []
+        }
+      });
+      return;
+    }
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
 app.get('/management/global-pause', async (_req, res) => {
   try {
     const result = await pgClient.query(
@@ -872,6 +976,56 @@ app.get('/catalogues/summary', async (_req, res) => {
       }
     });
   } catch (error) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
+app.get('/catalogues/cache-datasets', async (_req, res) => {
+  try {
+    const result = await pgClient.query(
+      `select distinct dataset_key
+       from cache_loader_jobs
+       where enabled = true
+       order by dataset_key asc`
+    );
+    const items = await Promise.all(
+      result.rows.map(async (row) => {
+        const datasetKey = row.dataset_key;
+        const meta = await redis.hGetAll(`cache:dataset:${datasetKey}:meta`);
+        let columns = [];
+        if (meta?.columns_json) {
+          columns = parseJsonSafe(meta.columns_json, []);
+        }
+        if (!Array.isArray(columns)) {
+          columns = [];
+        }
+        let columnTypes = {};
+        if (meta?.column_types_json) {
+          columnTypes = parseJsonSafe(meta.column_types_json, {});
+        }
+        if (!columnTypes || typeof columnTypes !== 'object' || Array.isArray(columnTypes)) {
+          columnTypes = {};
+        }
+        return {
+          dataset_key: datasetKey,
+          key_column: meta?.key_column || null,
+          row_count: Number(meta?.row_count || 0),
+          version: meta?.version || null,
+          updated_at: meta?.updated_at || null,
+          columns,
+          column_types: columnTypes
+        };
+      })
+    );
+    res.status(200).json({
+      status: 'ok',
+      items
+    });
+  } catch (error) {
+    if (error?.code === '42P01') {
+      res.status(200).json({ status: 'ok', items: [] });
+      return;
+    }
     res.status(500).json({ status: 'error', message: error.message });
   }
 });

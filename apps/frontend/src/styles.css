@@ -476,6 +476,26 @@ button:disabled {
   font-size: 11px;
 }
 
+.expressionBuilder {
+  border: 1px dashed #d5b48a;
+  border-radius: 10px;
+  background: rgba(255, 248, 235, 0.72);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.expressionBuilderHead {
+  font-size: 12px;
+  font-weight: 700;
+  color: #6f5131;
+}
+
+.expressionBuilderActions {
+  display: flex;
+  justify-content: flex-start;
+}
+
 .fieldError {
   color: #a22c2c;
   font-size: 11px;

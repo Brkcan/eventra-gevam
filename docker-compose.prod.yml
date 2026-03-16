@@ -49,6 +49,22 @@ services:
     depends_on:
       - api
 
+  cache-loader:
+    build:
+      context: .
+      dockerfile: apps/cache-loader/Dockerfile
+    env_file:
+      - .env.prod
+    environment:
+      - CACHE_LOADER_PORT=3010
+      - CACHE_LOADER_METADATA_DB_URL=${CACHE_LOADER_METADATA_DB_URL:-${POSTGRES_URL}}
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "3010:3010"
+
   caddy:
     image: caddy:2.8-alpine
     restart: unless-stopped

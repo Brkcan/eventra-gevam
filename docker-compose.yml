@@ -32,3 +32,17 @@ services:
       - POSTGRES_PASSWORD=eventra
     volumes:
       - ./infra/docker/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  cache-loader:
+    build:
+      context: .
+      dockerfile: apps/cache-loader/Dockerfile
+    environment:
+      - CACHE_LOADER_PORT=3010
+      - POSTGRES_URL=${POSTGRES_URL:-postgresql://eventra:eventra@postgres:5432/eventra}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "3010:3010"

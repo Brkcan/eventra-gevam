@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Eventra Cache Loader</title>
+    <style>
+      :root {
+        --bg: #eef3fb;
+        --card: #ffffff;
+        --text: #24324d;
+        --line: #d6deee;
+        --primary: #0d3a9d;
+        --accent: #ff640a;
+        --danger: #cc4235;
+      }
+      * { box-sizing: border-box; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+      body { margin: 0; background: var(--bg); color: var(--text); }
+      .top { background: var(--primary); color: #fff; padding: 14px 18px; font-weight: 700; }
+      .wrap { padding: 16px; display: grid; gap: 12px; }
+      .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+      .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; gap: 8px; }
+      .card h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 12px; font-weight: 600; }
+      input, select, textarea, button { width: 100%; border: 1px solid #c9d6ee; border-radius: 10px; padding: 8px; }
+      textarea { min-height: 90px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+      button { cursor: pointer; font-weight: 700; background: linear-gradient(180deg, #fff, #f0f5ff); color: #2b3f64; }
+      button.primary { background: linear-gradient(180deg, var(--accent), #e25203); border-color: #c94a04; color: #fff; }
+      button.danger { background: linear-gradient(180deg, #da5548, var(--danger)); border-color: #b23a2f; color: #fff; }
+      table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      th, td { border-bottom: 1px solid #e2e8f4; padding: 7px; text-align: left; }
+      thead th { background: #f4f7ff; }
+      .row { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .status { background: #fff; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 10px; padding: 8px 10px; font-size: 13px; }
+      .actions { display: flex; gap: 6px; }
+      .actions button { width: auto; min-width: 88px; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; word-break: break-word; }
+    </style>
+  </head>
+  <body>
+    <div class="top">Eventra Cache Loader</div>
+    <div class="wrap">
+      <div id="status" class="status">Hazir</div>
+
+      <div class="grid">
+        <section class="card">
+          <h3>DB Connection Ekle</h3>
+          <div class="row">
+            <label>Adi <input id="c_name" /></label>
+            <label>Host <input id="c_host" placeholder="127.0.0.1" /></label>
+          </div>
+          <div class="row">
+            <label>Port <input id="c_port" type="number" value="5432" /></label>
+            <label>Database <input id="c_db" /></label>
+          </div>
+          <div class="row">
+            <label>Username <input id="c_user" /></label>
+            <label>Password <input id="c_pass" type="password" /></label>
+          </div>
+          <label><input id="c_ssl" type="checkbox" /> SSL</label>
+          <button class="primary" id="btnCreateConn">Connection Kaydet</button>
+        </section>
+
+        <section class="card">
+          <h3>Scheduler Job Ekle (Gunluk)</h3>
+          <div class="row">
+            <label>Job Name <input id="j_name" /></label>
+            <label>Connection <select id="j_conn"></select></label>
+          </div>
+          <div class="row">
+            <label>Dataset Key <input id="j_dataset" placeholder="merchant_limits" /></label>
+            <label>Key Column <input id="j_keycol" placeholder="merchant_id" /></label>
+          </div>
+          <div class="row">
+            <label>Calisma Saati <input id="j_time" type="time" value="07:00" /></label>
+            <label>Timezone <input id="j_tz" value="Europe/Istanbul" /></label>
+          </div>
+          <label>SQL (SELECT)
+            <textarea id="j_sql" placeholder="select merchant_id, daily_limit, tier from merchant_limits where active = true"></textarea>
+          </label>
+          <label><input id="j_enabled" type="checkbox" checked /> Enabled</label>
+          <div class="actions">
+            <button id="btnTestQuery">Query Test Et</button>
+            <button class="primary" id="btnCreateJob">Job Kaydet</button>
+          </div>
+          <label>Query Preview</label>
+          <pre id="queryPreview" class="mono" style="max-height:220px;overflow:auto;background:#f7faff;border:1px solid #d6deee;border-radius:10px;padding:8px;margin:0;">-</pre>
+        </section>
+      </div>
+
+      <section class="card">
+        <h3>Connections</h3>
+        <table>
+          <thead>
+            <tr><th>Name</th><th>Host</th><th>DB</th><th>User</th><th>SSL</th><th>Islem</th></tr>
+          </thead>
+          <tbody id="connectionsBody"></tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h3>Jobs</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th><th>Dataset</th><th>Time</th><th>TZ</th><th>Enabled</th><th>Last</th><th>Status</th><th>Islem</th>
+            </tr>
+          </thead>
+          <tbody id="jobsBody"></tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h3>Son Calismalar</h3>
+        <table>
+          <thead>
+            <tr><th>Job</th><th>Start</th><th>Finish</th><th>Status</th><th>Rows</th><th>Error</th></tr>
+          </thead>
+          <tbody id="runsBody"></tbody>
+        </table>
+      </section>
+    </div>
+
+    <script>
+      const statusEl = document.getElementById('status');
+      const connectionsBody = document.getElementById('connectionsBody');
+      const jobsBody = document.getElementById('jobsBody');
+      const runsBody = document.getElementById('runsBody');
+      const connSelect = document.getElementById('j_conn');
+      const queryPreview = document.getElementById('queryPreview');
+
+      function setStatus(text) { statusEl.textContent = text; }
+      function fmt(ts) { return ts ? new Date(ts).toLocaleString('tr-TR') : '-'; }
+
+      async function api(path, options = {}) {
+        const res = await fetch(path, options);
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.message || `${res.status}`);
+        return body;
+      }
+
+      async function loadConnections() {
+        const body = await api('/connections');
+        connectionsBody.innerHTML = '';
+        connSelect.innerHTML = '<option value="">Sec...</option>';
+        for (const item of body.items || []) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${item.name}</td>
+            <td>${item.host}:${item.port}</td>
+            <td>${item.database_name}</td>
+            <td>${item.username}</td>
+            <td>${item.ssl_enabled ? 'true' : 'false'}</td>
+            <td class="actions">
+              <button data-test-conn="${item.id}">Test</button>
+              <button class="danger" data-del-conn="${item.id}">Sil</button>
+            </td>
+          `;
+          connectionsBody.appendChild(tr);
+
+          const option = document.createElement('option');
+          option.value = item.id;
+          option.textContent = `${item.name} (${item.host})`;
+          connSelect.appendChild(option);
+        }
+      }
+
+      async function loadJobs() {
+        const body = await api('/jobs');
+        jobsBody.innerHTML = '';
+        for (const item of body.items || []) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${item.name}</td>
+            <td class="mono">${item.dataset_key}</td>
+            <td>${item.run_time}</td>
+            <td>${item.timezone}</td>
+            <td>${item.enabled ? 'true' : 'false'}</td>
+            <td>${fmt(item.last_run_at)}</td>
+            <td>${item.last_status || '-'}</td>
+            <td class="actions">
+              <button class="primary" data-run-job="${item.id}">Run Now</button>
+              <button class="danger" data-del-job="${item.id}">Sil</button>
+            </td>
+          `;
+          jobsBody.appendChild(tr);
+        }
+      }
+
+      async function loadRuns() {
+        const body = await api('/runs');
+        runsBody.innerHTML = '';
+        for (const item of body.items || []) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${item.job_name}</td>
+            <td>${fmt(item.started_at)}</td>
+            <td>${fmt(item.finished_at)}</td>
+            <td>${item.status}</td>
+            <td>${item.row_count}</td>
+            <td class="mono">${item.error_text || '-'}</td>
+          `;
+          runsBody.appendChild(tr);
+        }
+      }
+
+      async function refreshAll() {
+        await Promise.all([loadConnections(), loadJobs(), loadRuns()]);
+      }
+
+      document.getElementById('btnCreateConn').addEventListener('click', async () => {
+        try {
+          await api('/connections', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              name: document.getElementById('c_name').value,
+              host: document.getElementById('c_host').value,
+              port: Number(document.getElementById('c_port').value || 5432),
+              database: document.getElementById('c_db').value,
+              username: document.getElementById('c_user').value,
+              password: document.getElementById('c_pass').value,
+              ssl: document.getElementById('c_ssl').checked
+            })
+          });
+          setStatus('Connection kaydedildi.');
+          await refreshAll();
+        } catch (error) {
+          setStatus(`Connection hatasi: ${error.message}`);
+        }
+      });
+
+      document.getElementById('btnCreateJob').addEventListener('click', async () => {
+        try {
+          await api('/jobs', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              name: document.getElementById('j_name').value,
+              connection_id: document.getElementById('j_conn').value,
+              dataset_key: document.getElementById('j_dataset').value,
+              sql_query: document.getElementById('j_sql').value,
+              key_column: document.getElementById('j_keycol').value,
+              run_time: document.getElementById('j_time').value,
+              timezone: document.getElementById('j_tz').value,
+              enabled: document.getElementById('j_enabled').checked
+            })
+          });
+          setStatus('Job kaydedildi. Scheduler aktif.');
+          await refreshAll();
+        } catch (error) {
+          setStatus(`Job hatasi: ${error.message}`);
+        }
+      });
+
+      document.getElementById('btnTestQuery').addEventListener('click', async () => {
+        try {
+          const body = await api('/jobs/test-query', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              connection_id: document.getElementById('j_conn').value,
+              sql_query: document.getElementById('j_sql').value,
+              key_column: document.getElementById('j_keycol').value,
+              preview_limit: 20
+            })
+          });
+          const item = body.item || {};
+          queryPreview.textContent = JSON.stringify(item, null, 2);
+          setStatus(
+            `Query test tamamlandi. satir:${item.preview_count || 0}, key_column_ok:${item.key_column_exists ? 'true' : 'false'}`
+          );
+        } catch (error) {
+          setStatus(`Query test hatasi: ${error.message}`);
+        }
+      });
+
+      connectionsBody.addEventListener('click', async (event) => {
+        const testBtn = event.target.closest('[data-test-conn]');
+        if (testBtn) {
+          const id = testBtn.getAttribute('data-test-conn');
+          try {
+            const body = await api(`/connections/${id}/test`, { method: 'POST' });
+            const item = body.item || {};
+            setStatus(
+              `Connection OK | db:${item.database_name || '-'} | gecikme:${item.elapsed_ms || 0}ms | server:${fmt(item.server_now)}`
+            );
+          } catch (error) {
+            setStatus(`Connection test hatasi: ${error.message}`);
+          }
+          return;
+        }
+
+        const btn = event.target.closest('[data-del-conn]');
+        if (!btn) return;
+        const id = btn.getAttribute('data-del-conn');
+        if (!confirm('Connection silinsin mi?')) return;
+        try {
+          await api(`/connections/${id}`, { method: 'DELETE' });
+          setStatus('Connection silindi.');
+          await refreshAll();
+        } catch (error) {
+          setStatus(`Silme hatasi: ${error.message}`);
+        }
+      });
+
+      jobsBody.addEventListener('click', async (event) => {
+        const runBtn = event.target.closest('[data-run-job]');
+        if (runBtn) {
+          const id = runBtn.getAttribute('data-run-job');
+          try {
+            await api(`/jobs/${id}/run-now`, { method: 'POST' });
+            setStatus('Run now tamamlandi.');
+            await refreshAll();
+          } catch (error) {
+            setStatus(`Run now hatasi: ${error.message}`);
+          }
+          return;
+        }
+
+        const delBtn = event.target.closest('[data-del-job]');
+        if (!delBtn) return;
+        const id = delBtn.getAttribute('data-del-job');
+        if (!confirm('Job silinsin mi?')) return;
+        try {
+          await api(`/jobs/${id}`, { method: 'DELETE' });
+          setStatus('Job silindi.');
+          await refreshAll();
+        } catch (error) {
+          setStatus(`Silme hatasi: ${error.message}`);
+        }
+      });
+
+      refreshAll().catch((error) => setStatus(`Yukleme hatasi: ${error.message}`));
+    </script>
+  </body>
+</html>

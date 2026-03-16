@@ -1,13 +1,17 @@
 import crypto from 'node:crypto';
+import http from 'node:http';
 import dotenv from 'dotenv';
 import { Kafka, Partitioners } from 'kafkajs';
 import nodemailer from 'nodemailer';
 import pg from 'pg';
+import { createClient } from 'redis';
 
 dotenv.config({ path: '../../.env' });
 
 const kafkaBrokers = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
 const postgresUrl = process.env.POSTGRES_URL || 'postgresql://eventra:eventra@localhost:5432/eventra';
+const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+const healthPort = Number(process.env.RULE_ENGINE_HEALTH_PORT || 3002);
 const smtpHost = process.env.SMTP_HOST || '';
 const smtpPort = Number(process.env.SMTP_PORT || 587);
 const smtpSecure = String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true';
@@ -24,6 +28,8 @@ const producer = kafka.producer({
   createPartitioner: Partitioners.LegacyPartitioner
 });
 const pgClient = new pg.Client({ connectionString: postgresUrl });
+const redisClient = createClient({ url: redisUrl });
+const redisSubscriber = redisClient.duplicate();
 const mailTransporter =
   smtpHost && smtpUser && smtpPass
     ? nodemailer.createTransport({
@@ -36,6 +42,100 @@ const mailTransporter =
 
 let runtimeJourneys = [];
 let runtimeGlobalPause = false;
+const inMemoryCacheDatasets = new Map();
+const inMemoryCacheMeta = new Map();
+
+async function loadDatasetIntoMemory(datasetKey) {
+  const key = String(datasetKey || '').trim();
+  if (!key) {
+    return;
+  }
+  const hashKey = `cache:dataset:${key}`;
+  const hash = await redisClient.hGetAll(hashKey);
+  const itemMap = new Map();
+
+  for (const [itemKey, rawValue] of Object.entries(hash || {})) {
+    try {
+      itemMap.set(itemKey, JSON.parse(rawValue));
+    } catch {
+      // ignore invalid row payloads
+    }
+  }
+
+  const meta = await redisClient.hGetAll(`${hashKey}:meta`);
+  inMemoryCacheDatasets.set(key, itemMap);
+  inMemoryCacheMeta.set(key, meta || {});
+}
+
+async function refreshDatasetsFromJourneys(journeys) {
+  const requiredKeys = Array.from(
+    new Set(
+      (journeys || [])
+        .map((journey) => String(journey?.cache_lookup?.dataset_key || '').trim())
+        .filter(Boolean)
+    )
+  );
+
+  await Promise.all(requiredKeys.map((datasetKey) => loadDatasetIntoMemory(datasetKey)));
+}
+
+function getInMemoryCacheItem(datasetKey, lookupKey) {
+  const dataset = inMemoryCacheDatasets.get(String(datasetKey || '').trim());
+  if (!dataset) {
+    return undefined;
+  }
+  return dataset.get(String(lookupKey || '').trim());
+}
+
+function getCacheHealthSnapshot() {
+  return Array.from(inMemoryCacheDatasets.entries()).map(([datasetKey, itemMap]) => {
+    const meta = inMemoryCacheMeta.get(datasetKey) || {};
+    return {
+      dataset_key: datasetKey,
+      row_count: Number(meta.row_count || itemMap.size || 0),
+      in_memory_count: itemMap.size,
+      version: meta.version || null,
+      updated_at: meta.updated_at || null,
+      key_column: meta.key_column || null
+    };
+  });
+}
+
+function startHealthServer() {
+  const server = http.createServer((req, res) => {
+    const path = req.url || '/';
+
+    if (path === '/health') {
+      const body = JSON.stringify({
+        status: 'ok',
+        global_pause: runtimeGlobalPause,
+        journeys_loaded: runtimeJourneys.length
+      });
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+      res.end(body);
+      return;
+    }
+
+    if (path === '/health/cache') {
+      const datasets = getCacheHealthSnapshot();
+      const body = JSON.stringify({
+        status: 'ok',
+        dataset_count: datasets.length,
+        items: datasets
+      });
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+      res.end(body);
+      return;
+    }
+
+    res.writeHead(404, { 'content-type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ status: 'error', message: 'not_found' }));
+  });
+
+  server.listen(healthPort, () => {
+    console.log(`Rule engine health server listening on :${healthPort}`);
+  });
+}
 
 async function logInstanceTransition({
   instanceId,
@@ -386,7 +486,7 @@ function parseJsonSafe(raw, fallback = {}) {
 
 function renderTemplate(template, vars) {
   return String(template || '').replace(/\{\{([\w.]+)\}\}/g, (_, key) =>
-    Object.prototype.hasOwnProperty.call(vars, key) ? String(vars[key]) : ''
+    getPathValue(vars, key) !== undefined ? String(getPathValue(vars, key)) : ''
   );
 }
 
@@ -588,9 +688,11 @@ function normalizeJourneyDefinition(row) {
   }
 
   const waitNode = pathNodes.find((node) => getNodeKind(node) === 'wait') || null;
+  const cacheLookupNode = pathNodes.find((node) => getNodeKind(node) === 'cache_lookup') || null;
   const httpCallNode = pathNodes.find((node) => getNodeKind(node) === 'http_call') || null;
   const conditionNode = pathNodes.find((node) => getNodeKind(node) === 'condition') || null;
-  const routeDecisionNodeId = conditionNode?.id || httpCallNode?.id || waitNode?.id || triggerNode.id;
+  const routeDecisionNodeId =
+    conditionNode?.id || cacheLookupNode?.id || httpCallNode?.id || waitNode?.id || triggerNode.id;
 
   let defaultActionNodeId =
     pathNodes.find((node) => getNodeKind(node) === 'action')?.id ||
@@ -744,6 +846,16 @@ function normalizeJourneyDefinition(row) {
           response_mapping_json: String(httpCallNode?.data?.response_mapping_json || '{}')
         }
       : null,
+    cache_lookup: cacheLookupNode
+      ? {
+          node_id: cacheLookupNode.id,
+          dataset_key: String(cacheLookupNode?.data?.cache_dataset_key || '').trim(),
+          lookup_key_template: String(cacheLookupNode?.data?.cache_lookup_key_template || '{{customer_id}}').trim(),
+          target_path: String(cacheLookupNode?.data?.cache_target_path || 'external.cache.item').trim(),
+          on_miss: String(cacheLookupNode?.data?.cache_on_miss || 'continue').trim(),
+          default_json: String(cacheLookupNode?.data?.cache_default_json || '{}')
+        }
+      : null,
     condition_routes: {
       true_routes: trueRoutes,
       false_routes: falseRoutes,
@@ -806,6 +918,8 @@ async function refreshRuntimeJourneys() {
   runtimeJourneys = result.rows
     .map((row) => normalizeJourneyDefinition(row))
     .filter(Boolean);
+
+  await refreshDatasetsFromJourneys(runtimeJourneys);
 }
 
 async function ensureSchema() {
@@ -1255,6 +1369,76 @@ async function evaluateDueJourney(journey) {
         external: {}
       };
       const customerAttributes = expressionContext.attributes || {};
+      let cacheMiss = false;
+      if (journey.cache_lookup?.dataset_key) {
+        const lookupKey = renderTemplate(journey.cache_lookup.lookup_key_template, {
+          customer_id: instance.customer_id,
+          payload: triggerPayload,
+          attributes: customerAttributes
+        });
+        const cacheValue = getInMemoryCacheItem(journey.cache_lookup.dataset_key, lookupKey);
+        if (cacheValue !== undefined) {
+          setPathValue(expressionContext, journey.cache_lookup.target_path, cacheValue);
+          expressionContext.external.cache = {
+            dataset_key: journey.cache_lookup.dataset_key,
+            lookup_key: lookupKey,
+            hit: true
+          };
+        } else {
+          cacheMiss = true;
+          const onMiss = journey.cache_lookup.on_miss;
+          if (onMiss === 'default') {
+            const defaultValue = parseJsonSafe(journey.cache_lookup.default_json, {});
+            setPathValue(expressionContext, journey.cache_lookup.target_path, defaultValue);
+            expressionContext.external.cache = {
+              dataset_key: journey.cache_lookup.dataset_key,
+              lookup_key: lookupKey,
+              hit: false,
+              default_applied: true
+            };
+            cacheMiss = false;
+          } else {
+            expressionContext.external.cache = {
+              dataset_key: journey.cache_lookup.dataset_key,
+              lookup_key: lookupKey,
+              hit: false
+            };
+          }
+        }
+      }
+
+      if (cacheMiss && journey.cache_lookup?.on_miss === 'fail') {
+        await pgClient.query(
+          `update journey_instances
+           set state = 'completed',
+               current_node = 'end',
+               completed_at = now(),
+               context_json = context_json || $2::jsonb,
+               updated_at = now()
+           where instance_id = $1`,
+          [
+            instance.instance_id,
+            JSON.stringify({
+              exit_reason: 'cache_miss_fail',
+              cache_dataset_key: journey.cache_lookup.dataset_key
+            })
+          ]
+        );
+        await logInstanceTransition({
+          instanceId: instance.instance_id,
+          journeyId: journey.journey_id,
+          journeyVersion: instance.journey_version || journey.version,
+          customerId: instance.customer_id,
+          fromState: 'processing',
+          toState: 'completed',
+          fromNode: instance.current_node,
+          toNode: 'end',
+          reason: 'cache_miss_fail',
+          eventId: instance.last_event_id
+        });
+        continue;
+      }
+
       let httpResult = null;
       if (journey.http_call?.url) {
         httpResult = await executeHttpCall(journey.http_call, instance, customerAttributes);
@@ -1638,9 +1822,25 @@ async function ensureKafkaTopics() {
 
 async function run() {
   await pgClient.connect();
+  await redisClient.connect();
+  await redisSubscriber.connect();
   await ensureSchema();
   await ensureKafkaTopics();
   await refreshRuntimeJourneys();
+  startHealthServer();
+
+  await redisSubscriber.subscribe('cache.updated', async (payload) => {
+    const parsed = parseJsonSafe(payload, {});
+    const datasetKey = String(parsed?.dataset_key || '').trim();
+    if (!datasetKey) {
+      return;
+    }
+    try {
+      await loadDatasetIntoMemory(datasetKey);
+    } catch (error) {
+      console.error('Cache refresh failed:', datasetKey, error.message);
+    }
+  });
 
   await producer.connect();
   await consumer.connect();
