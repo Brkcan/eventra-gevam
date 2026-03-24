@@ -1,0 +1,27 @@
+meta {
+  name: Ingest Event
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{apiBaseUrl}}/ingest
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+{
+  "customer_id": "{{customerId}}",
+  "event_type": "{{eventType}}",
+  "payload": {
+    "product_id": "p-42",
+    "price": 1499
+  },
+  "source": "web"
+}
+}

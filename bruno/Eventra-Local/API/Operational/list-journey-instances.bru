@@ -1,0 +1,15 @@
+meta {
+  name: List Journey Instances
+  type: http
+  seq: 46
+}
+
+get {
+  url: {{apiBaseUrl}}/journey-instances?customer_id={{customerId}}&limit=20
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

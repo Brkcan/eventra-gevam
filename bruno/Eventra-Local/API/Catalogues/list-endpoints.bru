@@ -1,0 +1,15 @@
+meta {
+  name: List Endpoints
+  type: http
+  seq: 24
+}
+
+get {
+  url: {{apiBaseUrl}}/catalogues/endpoints?q=crm&limit=20&offset=0
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

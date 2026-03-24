@@ -1,0 +1,15 @@
+meta {
+  name: List Actions
+  type: http
+  seq: 44
+}
+
+get {
+  url: {{apiBaseUrl}}/actions?customer_id={{customerId}}&journey_id={{journeyId}}&channel=email&status=sent&limit=20&offset=0&sort_order=desc
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

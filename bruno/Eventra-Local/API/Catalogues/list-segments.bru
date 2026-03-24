@@ -1,0 +1,15 @@
+meta {
+  name: List Segments
+  type: http
+  seq: 16
+}
+
+get {
+  url: {{apiBaseUrl}}/catalogues/segments?q=vip&limit=20&offset=0
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

@@ -1,0 +1,15 @@
+meta {
+  name: Delete Template
+  type: http
+  seq: 23
+}
+
+delete {
+  url: {{apiBaseUrl}}/catalogues/templates/{{templateId}}
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

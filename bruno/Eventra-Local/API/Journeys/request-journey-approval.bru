@@ -1,0 +1,23 @@
+meta {
+  name: Request Journey Approval
+  type: http
+  seq: 31
+}
+
+post {
+  url: {{apiBaseUrl}}/journeys/{{journeyId}}/request-approval
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+{
+  "version": "{{journeyVersion}}",
+  "requested_by": "burakcan",
+  "note": "Ready for review"
+}
+}

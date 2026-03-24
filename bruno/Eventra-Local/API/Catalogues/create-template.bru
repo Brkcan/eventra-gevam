@@ -1,0 +1,28 @@
+meta {
+  name: Create Template
+  type: http
+  seq: 21
+}
+
+post {
+  url: {{apiBaseUrl}}/catalogues/templates
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+{
+  "template_id": "{{templateId}}",
+  "channel": "email",
+  "subject": "Welcome {{attributes.first_name}}",
+  "body": "Hello {{attributes.first_name}}, welcome to Eventra.",
+  "variables": [
+    "attributes.first_name"
+  ],
+  "is_active": true
+}
+}

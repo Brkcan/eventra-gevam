@@ -1,0 +1,35 @@
+meta {
+  name: Update Event Type
+  type: http
+  seq: 14
+}
+
+put {
+  url: {{apiBaseUrl}}/catalogues/event-types/{{eventType}}
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+{
+  "description": "Updated cart add event",
+  "owner": "growth-team",
+  "version": 2,
+  "required_fields": [
+    "product_id",
+    "price"
+  ],
+  "schema_json": {
+    "type": "object"
+  },
+  "sample_payload": {
+    "product_id": "p-42",
+    "price": 1499
+  },
+  "is_active": true
+}
+}

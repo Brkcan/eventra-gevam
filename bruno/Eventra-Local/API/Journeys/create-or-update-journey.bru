@@ -1,0 +1,51 @@
+meta {
+  name: Create Or Update Journey
+  type: http
+  seq: 29
+}
+
+post {
+  url: {{apiBaseUrl}}/journeys
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+{
+  "journey_id": "{{journeyId}}",
+  "version": "{{journeyVersion}}",
+  "name": "Cart Abandonment 30m",
+  "status": "draft",
+  "folder_path": "Workspace",
+  "graph_json": {
+    "nodes": [
+      {
+        "id": "trigger",
+        "type": "trigger",
+        "data": {
+          "node_kind": "trigger"
+        }
+      },
+      {
+        "id": "{{waitNodeId}}",
+        "type": "wait",
+        "data": {
+          "node_kind": "wait",
+          "manual_release": true
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e1",
+        "source": "trigger",
+        "target": "{{waitNodeId}}"
+      }
+    ]
+  }
+}
+}

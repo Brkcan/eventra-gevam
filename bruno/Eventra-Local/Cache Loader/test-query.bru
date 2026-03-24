@@ -1,0 +1,24 @@
+meta {
+  name: Test Query
+  type: http
+  seq: 59
+}
+
+post {
+  url: {{cacheLoaderBaseUrl}}/jobs/test-query
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+{
+  "connection_id": "{{connectionId}}",
+  "sql_query": "select id, email, tier from customers",
+  "key_column": "id",
+  "preview_limit": 20
+}
+}

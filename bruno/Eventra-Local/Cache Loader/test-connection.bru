@@ -1,0 +1,15 @@
+meta {
+  name: Test Connection
+  type: http
+  seq: 56
+}
+
+post {
+  url: {{cacheLoaderBaseUrl}}/connections/{{connectionId}}/test
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

@@ -1,0 +1,26 @@
+meta {
+  name: Upsert Customer Profile
+  type: http
+  seq: 41
+}
+
+put {
+  url: {{apiBaseUrl}}/customers/{{customerId}}/profile
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+{
+  "segment": "{{segmentKey}}",
+  "attributes": {
+    "first_name": "Burak",
+    "email": "burak@example.com",
+    "tier": 3
+  }
+}
+}

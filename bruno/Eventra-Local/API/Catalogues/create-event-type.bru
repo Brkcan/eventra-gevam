@@ -1,0 +1,36 @@
+meta {
+  name: Create Event Type
+  type: http
+  seq: 13
+}
+
+post {
+  url: {{apiBaseUrl}}/catalogues/event-types
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+{
+  "event_type": "{{eventType}}",
+  "description": "Cart add event",
+  "owner": "growth-team",
+  "version": 1,
+  "required_fields": [
+    "product_id",
+    "price"
+  ],
+  "schema_json": {
+    "type": "object"
+  },
+  "sample_payload": {
+    "product_id": "p-42",
+    "price": 1499
+  },
+  "is_active": true
+}
+}

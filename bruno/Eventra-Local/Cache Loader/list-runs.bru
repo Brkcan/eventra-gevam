@@ -1,0 +1,15 @@
+meta {
+  name: List Runs
+  type: http
+  seq: 63
+}
+
+get {
+  url: {{cacheLoaderBaseUrl}}/runs?job_id={{jobId}}
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

@@ -1,0 +1,15 @@
+meta {
+  name: List Customers
+  type: http
+  seq: 43
+}
+
+get {
+  url: {{apiBaseUrl}}/customers?segment={{segmentKey}}&q={{customerId}}&limit=20&offset=0&sort_order=desc
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

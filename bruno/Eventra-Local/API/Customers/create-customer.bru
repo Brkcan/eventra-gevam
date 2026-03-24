@@ -1,0 +1,27 @@
+meta {
+  name: Create Customer
+  type: http
+  seq: 40
+}
+
+post {
+  url: {{apiBaseUrl}}/customers
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+{
+  "customer_id": "{{customerId}}",
+  "segment": "{{segmentKey}}",
+  "attributes": {
+    "first_name": "Burak",
+    "email": "burak@example.com",
+    "tier": 3
+  }
+}
+}

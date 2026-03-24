@@ -1,0 +1,23 @@
+meta {
+  name: Update Release Control
+  type: http
+  seq: 9
+}
+
+put {
+  url: {{apiBaseUrl}}/management/release-controls/{{journeyId}}
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+{
+  "version": "{{journeyVersion}}",
+  "rollout_percent": 100,
+  "release_paused": false
+}
+}

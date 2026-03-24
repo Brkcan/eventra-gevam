@@ -1,0 +1,15 @@
+meta {
+  name: Edge Capacity Usage
+  type: http
+  seq: 51
+}
+
+get {
+  url: {{apiBaseUrl}}/edge-capacity-usage?journey_id={{journeyId}}&edge_id=edge-1&window_type=daily&limit=20&offset=0
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

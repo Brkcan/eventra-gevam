@@ -1,0 +1,15 @@
+meta {
+  name: List Journey Instance Transitions
+  type: http
+  seq: 47
+}
+
+get {
+  url: {{apiBaseUrl}}/journey-instance-transitions?instance_id={{instanceId}}&customer_id={{customerId}}&journey_id={{journeyId}}&limit=20&offset=0
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

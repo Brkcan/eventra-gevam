@@ -1,0 +1,23 @@
+meta {
+  name: Reject Journey
+  type: http
+  seq: 33
+}
+
+post {
+  url: {{apiBaseUrl}}/journeys/{{journeyId}}/reject
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+{
+  "version": "{{journeyVersion}}",
+  "reviewed_by": "reviewer",
+  "note": "Needs changes"
+}
+}

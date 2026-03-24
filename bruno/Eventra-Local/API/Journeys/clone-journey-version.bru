@@ -1,0 +1,24 @@
+meta {
+  name: Clone Journey Version
+  type: http
+  seq: 38
+}
+
+post {
+  url: {{apiBaseUrl}}/journeys/{{journeyId}}/clone-version
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+{
+  "source_version": "{{journeyVersion}}",
+  "target_version": "{{toVersion}}",
+  "name": "Cart Abandonment 30m v2",
+  "status": "draft"
+}
+}

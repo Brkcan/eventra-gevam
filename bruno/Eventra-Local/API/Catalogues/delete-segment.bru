@@ -1,0 +1,15 @@
+meta {
+  name: Delete Segment
+  type: http
+  seq: 19
+}
+
+delete {
+  url: {{apiBaseUrl}}/catalogues/segments/{{segmentKey}}
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

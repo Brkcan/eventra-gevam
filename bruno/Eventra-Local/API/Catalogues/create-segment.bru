@@ -1,0 +1,25 @@
+meta {
+  name: Create Segment
+  type: http
+  seq: 17
+}
+
+post {
+  url: {{apiBaseUrl}}/catalogues/segments
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+{
+  "segment_key": "{{segmentKey}}",
+  "display_name": "VIP Customers",
+  "rule_expression": "attributes.tier >= 3",
+  "description": "VIP segment",
+  "is_active": true
+}
+}

@@ -1,0 +1,15 @@
+meta {
+  name: List External Calls
+  type: http
+  seq: 45
+}
+
+get {
+  url: {{apiBaseUrl}}/external-calls?customer_id={{customerId}}&journey_id={{journeyId}}&instance_id={{instanceId}}&result_type=success&limit=20&offset=0&sort_order=desc
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

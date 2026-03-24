@@ -1,0 +1,15 @@
+meta {
+  name: DLQ Events
+  type: http
+  seq: 50
+}
+
+get {
+  url: {{apiBaseUrl}}/dlq-events?limit=20&offset=0
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

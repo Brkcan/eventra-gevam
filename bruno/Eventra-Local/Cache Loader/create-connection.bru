@@ -1,0 +1,27 @@
+meta {
+  name: Create Connection
+  type: http
+  seq: 54
+}
+
+post {
+  url: {{cacheLoaderBaseUrl}}/connections
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+{
+  "name": "Source DB",
+  "host": "host.docker.internal",
+  "port": 5432,
+  "database": "analytics",
+  "username": "analytics_user",
+  "password": "secret",
+  "ssl": false
+}
+}

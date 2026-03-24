@@ -1,0 +1,21 @@
+meta {
+  name: Set Global Pause
+  type: http
+  seq: 7
+}
+
+put {
+  url: {{apiBaseUrl}}/management/global-pause
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+{
+  "enabled": false
+}
+}

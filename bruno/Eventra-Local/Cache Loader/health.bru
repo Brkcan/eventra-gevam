@@ -1,0 +1,15 @@
+meta {
+  name: Health
+  type: http
+  seq: 52
+}
+
+get {
+  url: {{cacheLoaderBaseUrl}}/health
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

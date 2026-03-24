@@ -1,0 +1,15 @@
+meta {
+  name: Cache Health
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{apiBaseUrl}}/dashboard/cache-health
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

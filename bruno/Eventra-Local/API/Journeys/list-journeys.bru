@@ -1,0 +1,15 @@
+meta {
+  name: List Journeys
+  type: http
+  seq: 28
+}
+
+get {
+  url: {{apiBaseUrl}}/journeys?journey_id={{journeyId}}&status=draft&limit=20&offset=0&sort_by=journey_id&sort_order=asc
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

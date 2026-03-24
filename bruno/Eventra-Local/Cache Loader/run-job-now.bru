@@ -1,0 +1,15 @@
+meta {
+  name: Run Job Now
+  type: http
+  seq: 62
+}
+
+post {
+  url: {{cacheLoaderBaseUrl}}/jobs/{{jobId}}/run-now
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

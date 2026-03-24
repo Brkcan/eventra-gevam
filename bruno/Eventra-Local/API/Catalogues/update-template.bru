@@ -1,0 +1,27 @@
+meta {
+  name: Update Template
+  type: http
+  seq: 22
+}
+
+put {
+  url: {{apiBaseUrl}}/catalogues/templates/{{templateId}}
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+{
+  "channel": "email",
+  "subject": "Welcome back {{attributes.first_name}}",
+  "body": "Hello {{attributes.first_name}}, nice to see you again.",
+  "variables": [
+    "attributes.first_name"
+  ],
+  "is_active": true
+}
+}

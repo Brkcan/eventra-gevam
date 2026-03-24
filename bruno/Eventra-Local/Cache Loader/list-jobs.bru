@@ -1,0 +1,15 @@
+meta {
+  name: List Jobs
+  type: http
+  seq: 57
+}
+
+get {
+  url: {{cacheLoaderBaseUrl}}/jobs
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

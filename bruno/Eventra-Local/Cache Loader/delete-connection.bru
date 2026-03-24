@@ -1,0 +1,15 @@
+meta {
+  name: Delete Connection
+  type: http
+  seq: 55
+}
+
+delete {
+  url: {{cacheLoaderBaseUrl}}/connections/{{connectionId}}
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

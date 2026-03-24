@@ -1,0 +1,15 @@
+meta {
+  name: Delete Job
+  type: http
+  seq: 61
+}
+
+delete {
+  url: {{cacheLoaderBaseUrl}}/jobs/{{jobId}}
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

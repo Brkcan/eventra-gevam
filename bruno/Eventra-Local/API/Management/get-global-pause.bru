@@ -1,0 +1,15 @@
+meta {
+  name: Get Global Pause
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{apiBaseUrl}}/management/global-pause
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

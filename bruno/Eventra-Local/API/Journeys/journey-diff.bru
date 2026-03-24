@@ -1,0 +1,15 @@
+meta {
+  name: Journey Diff
+  type: http
+  seq: 34
+}
+
+get {
+  url: {{apiBaseUrl}}/journeys/{{journeyId}}/diff?from_version={{fromVersion}}&to_version={{toVersion}}
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

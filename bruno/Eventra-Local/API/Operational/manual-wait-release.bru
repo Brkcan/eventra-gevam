@@ -1,0 +1,25 @@
+meta {
+  name: Manual Wait Release
+  type: http
+  seq: 49
+}
+
+post {
+  url: {{apiBaseUrl}}/manual-wait-release
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+{
+  "journey_id": "{{journeyId}}",
+  "version": "{{journeyVersion}}",
+  "wait_node_id": "{{waitNodeId}}",
+  "count": 10,
+  "released_by": "burakcan"
+}
+}

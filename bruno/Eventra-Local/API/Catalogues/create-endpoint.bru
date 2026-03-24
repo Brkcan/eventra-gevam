@@ -1,0 +1,29 @@
+meta {
+  name: Create Endpoint
+  type: http
+  seq: 25
+}
+
+post {
+  url: {{apiBaseUrl}}/catalogues/endpoints
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+{
+  "endpoint_id": "{{endpointId}}",
+  "method": "POST",
+  "url": "https://example.com/webhook",
+  "headers": {
+    "authorization": "Bearer token"
+  },
+  "timeout_ms": 5000,
+  "description": "CRM webhook",
+  "is_active": true
+}
+}

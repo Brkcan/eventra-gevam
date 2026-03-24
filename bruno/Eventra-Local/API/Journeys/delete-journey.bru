@@ -1,0 +1,15 @@
+meta {
+  name: Delete Journey
+  type: http
+  seq: 37
+}
+
+delete {
+  url: {{apiBaseUrl}}/journeys/{{journeyId}}?version={{journeyVersion}}
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

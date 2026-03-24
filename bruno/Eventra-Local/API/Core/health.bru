@@ -1,0 +1,15 @@
+meta {
+  name: Health
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{apiBaseUrl}}/health
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

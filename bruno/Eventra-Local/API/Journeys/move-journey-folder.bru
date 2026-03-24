@@ -1,0 +1,22 @@
+meta {
+  name: Move Journey Folder
+  type: http
+  seq: 39
+}
+
+patch {
+  url: {{apiBaseUrl}}/journeys/{{journeyId}}/move-folder
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+{
+  "version": "{{journeyVersion}}",
+  "target_folder_path": "Workspace/Retention"
+}
+}

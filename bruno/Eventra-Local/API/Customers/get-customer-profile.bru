@@ -1,0 +1,15 @@
+meta {
+  name: Get Customer Profile
+  type: http
+  seq: 42
+}
+
+get {
+  url: {{apiBaseUrl}}/customers/{{customerId}}/profile
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

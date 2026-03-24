@@ -1,0 +1,24 @@
+meta {
+  name: Update Segment
+  type: http
+  seq: 18
+}
+
+put {
+  url: {{apiBaseUrl}}/catalogues/segments/{{segmentKey}}
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+{
+  "display_name": "VIP Customers",
+  "rule_expression": "attributes.tier >= 4",
+  "description": "Updated VIP segment",
+  "is_active": true
+}
+}

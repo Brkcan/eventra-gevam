@@ -1,0 +1,28 @@
+meta {
+  name: Update Endpoint
+  type: http
+  seq: 26
+}
+
+put {
+  url: {{apiBaseUrl}}/catalogues/endpoints/{{endpointId}}
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+{
+  "method": "POST",
+  "url": "https://example.com/webhook",
+  "headers": {
+    "authorization": "Bearer token"
+  },
+  "timeout_ms": 8000,
+  "description": "Updated CRM webhook",
+  "is_active": true
+}
+}

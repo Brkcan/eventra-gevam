@@ -1,0 +1,15 @@
+meta {
+  name: List Templates
+  type: http
+  seq: 20
+}
+
+get {
+  url: {{apiBaseUrl}}/catalogues/templates?q=welcome&limit=20&offset=0
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

@@ -1,0 +1,15 @@
+meta {
+  name: Manual Wait Queue
+  type: http
+  seq: 48
+}
+
+get {
+  url: {{apiBaseUrl}}/manual-wait-queue?journey_id={{journeyId}}&version={{journeyVersion}}&wait_node_id={{waitNodeId}}&limit=20&offset=0
+  body: none
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}

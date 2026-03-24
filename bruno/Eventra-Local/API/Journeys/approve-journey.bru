@@ -1,0 +1,23 @@
+meta {
+  name: Approve Journey
+  type: http
+  seq: 32
+}
+
+post {
+  url: {{apiBaseUrl}}/journeys/{{journeyId}}/approve
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+{
+  "version": "{{journeyVersion}}",
+  "reviewed_by": "reviewer",
+  "note": "Approved"
+}
+}

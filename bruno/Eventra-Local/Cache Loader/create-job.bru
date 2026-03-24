@@ -1,0 +1,28 @@
+meta {
+  name: Create Job
+  type: http
+  seq: 58
+}
+
+post {
+  url: {{cacheLoaderBaseUrl}}/jobs
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+{
+  "name": "VIP Cache Refresh",
+  "connection_id": "{{connectionId}}",
+  "dataset_key": "vip_customers",
+  "sql_query": "select id, email, tier from customers",
+  "key_column": "id",
+  "run_time": "07:00",
+  "timezone": "Europe/Istanbul",
+  "enabled": true
+}
+}
