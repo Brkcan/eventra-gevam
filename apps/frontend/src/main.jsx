@@ -21,10 +21,22 @@ function resolveApiBaseUrl() {
 
   const { protocol, hostname } = window.location;
   const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1';
+  const derivedHost = hostname.startsWith('www.') ? `api.${hostname.slice(4)}` : `api.${hostname}`;
+  const derivedUrl = `${protocol}//${derivedHost}`;
+  const hasUsableHost = (value) => {
+    try {
+      const parsed = new URL(value);
+      return Boolean(parsed.hostname);
+    } catch {
+      return false;
+    }
+  };
 
   if (configured) {
+    if (!hasUsableHost(configured)) {
+      return isLocalHost ? 'http://localhost:3001' : derivedUrl;
+    }
     if (configured.includes('localhost') && !isLocalHost) {
-      const derivedHost = hostname.startsWith('www.') ? `api.${hostname.slice(4)}` : `api.${hostname}`;
       return `https://${derivedHost}`;
     }
     return configured;
@@ -34,8 +46,7 @@ function resolveApiBaseUrl() {
     return 'http://localhost:3001';
   }
 
-  const derivedHost = hostname.startsWith('www.') ? `api.${hostname.slice(4)}` : `api.${hostname}`;
-  return `${protocol}//${derivedHost}`;
+  return derivedUrl;
 }
 
 const API_BASE_URL = resolveApiBaseUrl();
