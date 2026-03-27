@@ -359,3 +359,35 @@ npm run podman:prod:down
 
 Sunucuda Podman rootless calisiyorsa `80/443` port bind islemi izin problemi yasatabilir.
 Bu durumda ya rootful Podman kullanilir ya da host uzerinde dusuk port izni acilir.
+
+## VPS icin Daha Stabil Secenek: Caddy Hostta, Uygulama Podman'da
+
+Eger VPS uzerinde Podman container icindeki Caddy, ACME/Let's Encrypt DNS timeout yasiyorsa
+`docker-compose.podman.prod.host-proxy.yml` dosyasini kullan.
+
+Bu senaryoda:
+- API hostta `127.0.0.1:3001`
+- Frontend hostta `127.0.0.1:3000`
+- Cache loader hostta `127.0.0.1:3010`
+- Caddy container icinde degil, dogrudan VPS uzerinde calisir
+
+Podman stack:
+
+```bash
+podman-compose -f docker-compose.podman.prod.host-proxy.yml up -d --build
+```
+
+Host Caddyfile ornegi:
+
+```caddy
+www.tekinspot.com {
+    reverse_proxy 127.0.0.1:3000
+}
+
+api.tekinspot.com {
+    reverse_proxy 127.0.0.1:3001
+}
+```
+
+Bu model, VPS DNS cozumlemesini host isletim sistemi uzerinden yaptigi icin
+container icindeki ACME DNS problemlerini by-pass eder.
