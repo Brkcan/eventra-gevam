@@ -391,3 +391,37 @@ api.tekinspot.com {
 
 Bu model, VPS DNS cozumlemesini host isletim sistemi uzerinden yaptigi icin
 container icindeki ACME DNS problemlerini by-pass eder.
+
+## VPS icin En Guvenli Podman Secenegi: Host Loopback Baglantilari
+
+Eger Podman service discovery (`postgres`, `redis`, `kafka`) VPS uzerinde
+`EAI_AGAIN` benzeri DNS hatalari uretiyorsa `docker-compose.podman.prod.vps.yml`
+dosyasini kullan.
+
+Bu modelde:
+- Postgres hostta `127.0.0.1:5432`
+- Redis hostta `127.0.0.1:6379`
+- Kafka hostta `127.0.0.1:9092`
+- API host network ile `127.0.0.1:3001`
+- Rule engine host network ile `127.0.0.1:3002`
+- Cache loader host network ile `127.0.0.1:3010`
+- Frontend `127.0.0.1:3000`
+- Host Caddy bu loopback portlara reverse proxy yapar
+
+Deploy:
+
+```bash
+podman-compose -f docker-compose.podman.prod.vps.yml up -d --build
+```
+
+Host Caddyfile:
+
+```caddy
+www.tekinspot.com {
+    reverse_proxy 127.0.0.1:3000
+}
+
+api.tekinspot.com {
+    reverse_proxy 127.0.0.1:3001
+}
+```
