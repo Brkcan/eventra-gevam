@@ -315,6 +315,16 @@ function App() {
   const [folderItems, setFolderItems] = useState([DEFAULT_FOLDER]);
   const [selectedFolder, setSelectedFolder] = useState(DEFAULT_FOLDER);
   const [newFolderName, setNewFolderName] = useState('');
+  const [copilotPrompt, setCopilotPrompt] = useState('');
+  const [copilotLoading, setCopilotLoading] = useState(false);
+  const [copilotTab, setCopilotTab] = useState('chat');
+  const [copilotMessages, setCopilotMessages] = useState([]);
+  const [copilotHistory, setCopilotHistory] = useState([]);
+  const [copilotAssumptions, setCopilotAssumptions] = useState([]);
+  const [copilotQuestions, setCopilotQuestions] = useState([]);
+  const [copilotValidation, setCopilotValidation] = useState({ valid: true, errors: [], warnings: [] });
+  const [copilotExplanation, setCopilotExplanation] = useState(null);
+  const [showCopilot, setShowCopilot] = useState(false);
   const [activeMenu, setActiveMenu] = useState('Scenarios');
   const [viewMode, setViewMode] = useState('library');
   const [showJourneyMeta, setShowJourneyMeta] = useState(false);
@@ -359,6 +369,18 @@ function App() {
   const [catalogueTemplates, setCatalogueTemplates] = useState([]);
   const [catalogueEndpoints, setCatalogueEndpoints] = useState([]);
   const [catalogueCacheDatasets, setCatalogueCacheDatasets] = useState([]);
+  const appendCopilotHistory = useCallback((entry) => {
+    setCopilotHistory((prev) =>
+      [
+        {
+          id: entry.id || `history-${Date.now()}`,
+          createdAt: new Date().toISOString(),
+          ...entry
+        },
+        ...prev
+      ].slice(0, 30)
+    );
+  }, []);
   const [eventTypeForm, setEventTypeForm] = useState({
     event_type: '',
     description: '',
@@ -821,6 +843,294 @@ function App() {
     const merged = Array.from(new Set([DEFAULT_FOLDER, ...dbFolders]));
     setFolderItems(merged);
     return merged;
+  }, []);
+
+  const generateJourneyDraftWithAi = useCallback(async (promptOverride = null) => {
+    const prompt = String(promptOverride ?? copilotPrompt ?? '').trim();
+    if (!prompt) {
+      setStatusText('AI prompt bos olamaz.');
+      return;
+    }
+
+    try {
+      setCopilotLoading(true);
+      setCopilotMessages((prev) => [...prev, { id: `user-${Date.now()}`, role: 'user', text: prompt }]);
+      const response = await fetch(`${API_BASE_URL}/ai/generate-journey`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt,
+          context:
+            viewMode === 'designer'
+              ? {
+                  existingJourney: {
+                    journey_id: journeyId,
+                    version,
+                    name,
+                    status: journeyStatus,
+                    folder_path: selectedFolder || DEFAULT_FOLDER,
+                    graph_json: graphJson
+                  }
+                }
+              : undefined
+        })
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body.message || `AI draft failed: ${response.status}`);
+      }
+
+      const draft = body.draft || {};
+      setCopilotAssumptions(Array.isArray(draft.assumptions) ? draft.assumptions : []);
+      setCopilotQuestions(Array.isArray(draft.questions) ? draft.questions : []);
+      setCopilotValidation(
+        body.validation || {
+          valid: true,
+          errors: [],
+          warnings: []
+        }
+      );
+      setCopilotExplanation(null);
+      setCopilotPrompt('');
+      applyJourneyToCanvas({
+        journey_id: draft.journey_id,
+        version: Number(draft.version || 1),
+        name: draft.name,
+        status: draft.status || 'draft',
+        folder_path: draft.folder_path || DEFAULT_FOLDER,
+        graph_json: draft.graph_json || { nodes: [], edges: [] }
+      });
+      setCopilotMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          title: draft.name || draft.journey_id,
+          text: `Draft olusturdum. Canvas'a yukledim.${body.validation?.warnings?.length ? ` ${body.validation.warnings.length} uyari var.` : ''}`
+        }
+      ]);
+      appendCopilotHistory({
+        type: 'draft',
+        prompt,
+        title: draft.name || draft.journey_id,
+        summary: `Draft olusturuldu${body.validation?.warnings?.length ? `, ${body.validation.warnings.length} uyari` : ''}.`
+      });
+      setStatusText(`AI draft hazirlandi: ${draft.name || draft.journey_id}`);
+    } catch (error) {
+      setCopilotMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-error-${Date.now()}`,
+          role: 'assistant',
+          tone: 'warn',
+          title: 'Draft olusturulamadi',
+          text: error.message
+        }
+      ]);
+      appendCopilotHistory({
+        type: 'draft-error',
+        prompt,
+        title: 'Draft olusturulamadi',
+        summary: error.message
+      });
+      setStatusText(`AI draft hatasi: ${error.message}`);
+    } finally {
+      setCopilotLoading(false);
+    }
+  }, [
+    applyJourneyToCanvas,
+    copilotPrompt,
+    graphJson,
+    journeyId,
+    journeyStatus,
+    name,
+    appendCopilotHistory,
+    selectedFolder,
+    version,
+    viewMode
+  ]);
+
+  const explainJourneyWithAi = useCallback(async (promptOverride = null) => {
+    try {
+      setCopilotLoading(true);
+      const prompt = String(promptOverride ?? copilotPrompt ?? '').trim();
+      if (prompt) {
+        setCopilotMessages((prev) => [...prev, { id: `user-${Date.now()}`, role: 'user', text: prompt }]);
+      }
+      const response = await fetch(`${API_BASE_URL}/ai/explain-journey`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          journey: {
+            journey_id: journeyId,
+            version,
+            name,
+            status: journeyStatus,
+            folder_path: selectedFolder || DEFAULT_FOLDER,
+            graph_json: graphJson
+          }
+        })
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body.message || `AI explain failed: ${response.status}`);
+      }
+      setCopilotExplanation(body.explanation || null);
+      setCopilotPrompt('');
+      setCopilotMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-explain-${Date.now()}`,
+          role: 'assistant',
+          title: 'Journey aciklamasi',
+          text: body.explanation?.summary || 'Aciklama hazirlandi.'
+        }
+      ]);
+      appendCopilotHistory({
+        type: 'explain',
+        prompt: prompt || `${name} journey'sini acikla`,
+        title: 'Journey aciklamasi',
+        summary: body.explanation?.summary || 'Aciklama hazirlandi.'
+      });
+      setStatusText('Journey aciklamasi hazir.');
+    } catch (error) {
+      setCopilotMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-error-${Date.now()}`,
+          role: 'assistant',
+          tone: 'warn',
+          title: 'Aciklama alinamadi',
+          text: error.message
+        }
+      ]);
+      appendCopilotHistory({
+        type: 'explain-error',
+        prompt: prompt || `${name} journey'sini acikla`,
+        title: 'Aciklama alinamadi',
+        summary: error.message
+      });
+      setStatusText(`AI explain hatasi: ${error.message}`);
+    } finally {
+      setCopilotLoading(false);
+    }
+  }, [graphJson, journeyId, journeyStatus, name, appendCopilotHistory, selectedFolder, version]);
+
+  const reviseJourneyWithAi = useCallback(async (promptOverride = null) => {
+    const instruction = String(promptOverride ?? copilotPrompt ?? '').trim();
+    if (!instruction) {
+      setStatusText('Revize talimati bos olamaz.');
+      return;
+    }
+
+    if (viewMode !== 'designer' || !graphJson?.nodes?.length) {
+      setStatusText('Revize etmek icin once designer ekraninda bir journey ac.');
+      return;
+    }
+
+    try {
+      setCopilotLoading(true);
+      setCopilotMessages((prev) => [...prev, { id: `user-${Date.now()}`, role: 'user', text: instruction }]);
+      const response = await fetch(`${API_BASE_URL}/ai/revise-journey`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          instruction,
+          journey: {
+            journey_id: journeyId,
+            version,
+            name,
+            status: journeyStatus,
+            folder_path: selectedFolder || DEFAULT_FOLDER,
+            graph_json: graphJson
+          }
+        })
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body.message || `AI revise failed: ${response.status}`);
+      }
+
+      const draft = body.draft || {};
+      setCopilotAssumptions(Array.isArray(draft.assumptions) ? draft.assumptions : []);
+      setCopilotQuestions(Array.isArray(draft.questions) ? draft.questions : []);
+      setCopilotValidation(
+        body.validation || {
+          valid: true,
+          errors: [],
+          warnings: []
+        }
+      );
+      setCopilotExplanation(null);
+      setCopilotPrompt('');
+      applyJourneyToCanvas({
+        journey_id: draft.journey_id,
+        version: Number(draft.version || 1),
+        name: draft.name,
+        status: draft.status || 'draft',
+        folder_path: draft.folder_path || DEFAULT_FOLDER,
+        graph_json: draft.graph_json || { nodes: [], edges: [] }
+      });
+      setCopilotMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-revise-${Date.now()}`,
+          role: 'assistant',
+          title: draft.name || draft.journey_id,
+          text: `Journey'yi revize ettim ve yeni draft'i canvas'a yukledim.${body.validation?.warnings?.length ? ` ${body.validation.warnings.length} uyari var.` : ''}`
+        }
+      ]);
+      appendCopilotHistory({
+        type: 'revise',
+        prompt: instruction,
+        title: draft.name || 'Journey revizyonu',
+        summary: `Journey revize edildi${body.validation?.warnings?.length ? `, ${body.validation.warnings.length} uyari` : ''}.`
+      });
+      setStatusText(`AI revizyon hazirlandi: ${draft.name || draft.journey_id}`);
+    } catch (error) {
+      setCopilotMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-error-${Date.now()}`,
+          role: 'assistant',
+          tone: 'warn',
+          title: 'Revizyon uygulanamadi',
+          text: error.message
+        }
+      ]);
+      appendCopilotHistory({
+        type: 'revise-error',
+        prompt: instruction,
+        title: 'Revizyon uygulanamadi',
+        summary: error.message
+      });
+      setStatusText(`AI revise hatasi: ${error.message}`);
+    } finally {
+      setCopilotLoading(false);
+    }
+  }, [
+    applyJourneyToCanvas,
+    copilotPrompt,
+    graphJson,
+    journeyId,
+    journeyStatus,
+    name,
+    appendCopilotHistory,
+    selectedFolder,
+    version,
+    viewMode
+  ]);
+
+  const resetCopilotSession = useCallback(() => {
+    setCopilotPrompt('');
+    setCopilotMessages([]);
+    setCopilotAssumptions([]);
+    setCopilotQuestions([]);
+    setCopilotValidation({ valid: true, errors: [], warnings: [] });
+    setCopilotExplanation(null);
+    setCopilotLoading(false);
+    setCopilotTab('chat');
+    setStatusText('Copilot temizlendi. Yeni bir prompt ile baslayabilirsin.');
   }, []);
 
   const fetchApprovalInfo = useCallback(
@@ -1950,6 +2260,29 @@ function App() {
       ? parseJsonText(selectedData.response_mapping_json || '{}')
       : { ok: true };
 
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem('eventra_copilot_history');
+      if (!raw) {
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setCopilotHistory(parsed);
+      }
+    } catch {
+      // ignore storage parse issues
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('eventra_copilot_history', JSON.stringify(copilotHistory));
+    } catch {
+      // ignore storage write issues
+    }
+  }, [copilotHistory]);
+
   return (
     <div className="appShell">
       <aside className="leftMenu">
@@ -2046,6 +2379,14 @@ function App() {
           >
             Publish
           </button>
+          <button
+            type="button"
+            className={showCopilot ? 'copilotToggle active' : 'copilotToggle'}
+            onClick={() => setShowCopilot((prev) => !prev)}
+            disabled={busy}
+          >
+            Sor
+          </button>
         </div>
       </section>
 
@@ -2104,6 +2445,241 @@ function App() {
         <button type="button" onClick={rejectJourney} disabled={busy || approvalBusy}>
           Reject
         </button>
+      </section>
+      )}
+
+      {showCopilot && (
+      <section className="dashboardCard aiCopilotDrawer aiCopilotCard">
+        <div className="aiCopilotTopbar">
+          <div className="aiCopilotTabs">
+            <button
+              type="button"
+              className={copilotTab === 'chat' ? 'active' : ''}
+              onClick={() => setCopilotTab('chat')}
+            >
+              Sohbet
+            </button>
+            <button
+              type="button"
+              className={copilotTab === 'history' ? 'active' : ''}
+              onClick={() => setCopilotTab('history')}
+            >
+              Gecmis
+            </button>
+          </div>
+          <div className="aiCopilotTopActions">
+            <button type="button" onClick={resetCopilotSession} disabled={copilotLoading}>
+              Temizle
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setCopilotPrompt(
+                  'Sepete urun atip 30 dakika satin almayanlara email gonder. Satin alma olursa journey dursun.'
+                )
+              }
+              disabled={copilotLoading}
+            >
+              Ornek
+            </button>
+            <button type="button" onClick={() => setShowCopilot(false)}>
+              Kapat
+            </button>
+          </div>
+        </div>
+        {copilotTab === 'chat' && (
+        <>
+        <div className="aiCopilotThread">
+          <article className="aiMessage assistant">
+            <div className="aiMessageAvatar">AI</div>
+            <div className="aiMessageBody">
+              <strong>AI Copilot</strong>
+              <p>Journey draft olusturabilir, mevcut flow'u aciklayabilir ve kataloglara gore riskleri isaretleyebilirim.</p>
+            </div>
+          </article>
+
+          {copilotMessages.map((message) => (
+            <article
+              key={message.id}
+              className={`aiMessage ${message.role === 'user' ? 'user' : 'assistant'} ${message.tone === 'warn' ? 'toneWarn' : ''}`}
+            >
+              <div className="aiMessageAvatar">{message.role === 'user' ? 'Sen' : 'AI'}</div>
+              <div className="aiMessageBody">
+                {message.title ? <strong>{message.title}</strong> : null}
+                <p>{message.text}</p>
+              </div>
+            </article>
+          ))}
+
+          {(copilotAssumptions.length > 0 || copilotQuestions.length > 0) && (
+            <article className="aiMessage assistant">
+              <div className="aiMessageAvatar">AI</div>
+              <div className="aiMessageBody">
+                {copilotAssumptions.length > 0 && (
+                  <div className="aiCopilotMeta">
+                    <strong>Varsayimlar</strong>
+                    <ul>
+                      {copilotAssumptions.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {copilotQuestions.length > 0 && (
+                  <div className="aiCopilotMeta">
+                    <strong>Sorular</strong>
+                    <ul>
+                      {copilotQuestions.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </article>
+          )}
+
+          {copilotValidation && (copilotValidation.errors?.length > 0 || copilotValidation.warnings?.length > 0) && (
+            <article className="aiMessage assistant toneWarn">
+              <div className="aiMessageAvatar">AI</div>
+              <div className="aiMessageBody">
+                {copilotValidation.errors?.length > 0 && (
+                  <div className="aiCopilotMeta">
+                    <strong>Validation Errors</strong>
+                    <ul>
+                      {copilotValidation.errors.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {copilotValidation.warnings?.length > 0 && (
+                  <div className="aiCopilotMeta">
+                    <strong>Validation Warnings</strong>
+                    <ul>
+                      {copilotValidation.warnings.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </article>
+          )}
+
+          {copilotExplanation && (
+            <article className="aiMessage assistant">
+              <div className="aiMessageAvatar">AI</div>
+              <div className="aiMessageBody">
+                <div className="aiCopilotMeta">
+                  <strong>Ozet</strong>
+                  <p>{copilotExplanation.summary}</p>
+                </div>
+                {Array.isArray(copilotExplanation.risks) && copilotExplanation.risks.length > 0 && (
+                  <div className="aiCopilotMeta">
+                    <strong>Riskler</strong>
+                    <ul>
+                      {copilotExplanation.risks.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {Array.isArray(copilotExplanation.suggestions) && copilotExplanation.suggestions.length > 0 && (
+                  <div className="aiCopilotMeta">
+                    <strong>Oneriler</strong>
+                    <ul>
+                      {copilotExplanation.suggestions.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </article>
+          )}
+
+          {copilotLoading && (
+            <article className="aiMessage assistant">
+              <div className="aiMessageAvatar">AI</div>
+              <div className="aiMessageBody">
+                <p>Copilot dusunuyor...</p>
+              </div>
+            </article>
+          )}
+        </div>
+        <div className="aiComposer">
+          <textarea
+            value={copilotPrompt}
+            onChange={(e) => setCopilotPrompt(e.target.value)}
+            placeholder="Journey hedefini yaz. Ornek: Sepete urun atip 30 dakika satin almayanlara email gonder."
+          />
+          <div className="aiComposerActions">
+            <button type="button" onClick={explainJourneyWithAi} disabled={copilotLoading}>
+              Acikla
+            </button>
+            <button
+              type="button"
+              onClick={reviseJourneyWithAi}
+              disabled={copilotLoading || viewMode !== 'designer' || !graphJson?.nodes?.length}
+            >
+              Revize Et
+            </button>
+            <button type="button" className="primary" onClick={() => generateJourneyDraftWithAi()} disabled={copilotLoading}>
+              {copilotLoading ? 'Uretiyor...' : 'Gonder'}
+            </button>
+          </div>
+        </div>
+        </>
+        )}
+        {copilotTab === 'history' && (
+          <div className="aiHistoryState">
+            {copilotHistory.length === 0 && (
+              <>
+                <strong>Gecmis bos</strong>
+                <p>Copilot ile ilk prompt'u gonderdiginde burada gorunecek.</p>
+              </>
+            )}
+            {copilotHistory.length > 0 && (
+              <div className="aiHistoryList">
+                {copilotHistory.map((item) => (
+                  <article key={item.id} className="aiHistoryCard">
+                    <small>{formatLogDate(item.createdAt)}</small>
+                    <strong>{item.title}</strong>
+                    <p>{item.prompt}</p>
+                    <span>{item.summary}</span>
+                    <div className="aiHistoryActions">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCopilotTab('chat');
+                          setCopilotPrompt(item.prompt || '');
+                        }}
+                      >
+                        Tekrar kullan
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCopilotTab('chat');
+                          if (item.type === 'explain' || item.type === 'explain-error') {
+                            explainJourneyWithAi(item.prompt || '');
+                          } else if (item.type === 'revise' || item.type === 'revise-error') {
+                            reviseJourneyWithAi(item.prompt || '');
+                          } else {
+                            generateJourneyDraftWithAi(item.prompt || '');
+                          }
+                        }}
+                      >
+                        Yeniden calistir
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </section>
       )}
 

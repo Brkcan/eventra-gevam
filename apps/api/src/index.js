@@ -6,6 +6,7 @@ import { Kafka, Partitioners } from 'kafkajs';
 import { createClient } from 'redis';
 import pg from 'pg';
 import { z } from 'zod';
+import { explainJourney, generateJourneyDraft, reviseJourney } from './lib/llm.js';
 
 dotenv.config({ path: '../../.env' });
 
@@ -124,6 +125,44 @@ const CatalogueEndpointSchema = z.object({
   is_active: z.boolean().default(true)
 });
 
+const AiGenerateJourneySchema = z.object({
+  prompt: z.string().min(10),
+  context: z
+    .object({
+      existingJourney: z.record(z.any()).nullable().optional()
+    })
+    .optional()
+});
+
+const AiExplainJourneySchema = z.object({
+  journey: z.object({
+    journey_id: z.string().min(1).optional(),
+    version: z.number().int().positive().optional(),
+    name: z.string().min(1).optional(),
+    status: z.string().optional(),
+    folder_path: z.string().optional(),
+    graph_json: z.object({
+      nodes: z.array(z.record(z.any())).default([]),
+      edges: z.array(z.record(z.any())).default([])
+    })
+  })
+});
+
+const AiReviseJourneySchema = z.object({
+  instruction: z.string().min(5),
+  journey: z.object({
+    journey_id: z.string().min(1).optional(),
+    version: z.number().int().positive().optional(),
+    name: z.string().min(1).optional(),
+    status: z.string().optional(),
+    folder_path: z.string().optional(),
+    graph_json: z.object({
+      nodes: z.array(z.record(z.any())).default([]),
+      edges: z.array(z.record(z.any())).default([])
+    })
+  })
+});
+
 const kafka = new Kafka({ clientId: kafkaClientId, brokers: kafkaBrokers });
 const admin = kafka.admin();
 const producer = kafka.producer({
@@ -232,6 +271,61 @@ async function resolveWaitNodeId(journeyId, version, waitNodeIdRaw) {
 
   const firstManual = waitNodes.find((node) => Boolean(node?.data?.manual_release));
   return String(firstManual?.id || waitNodes[0].id);
+}
+
+async function loadAiCatalogContext() {
+  const [eventTypes, templates, segments, endpoints, cacheDatasets] = await Promise.all([
+    pgClient.query(
+      `select event_type
+       from catalogue_event_types
+       where is_active = true
+       order by event_type asc
+       limit 100`
+    ),
+    pgClient.query(
+      `select template_id, channel
+       from catalogue_templates
+       where is_active = true
+       order by template_id asc
+       limit 100`
+    ),
+    pgClient.query(
+      `select segment_key
+       from catalogue_segments
+       where is_active = true
+       order by segment_key asc
+       limit 100`
+    ),
+    pgClient.query(
+      `select endpoint_id, method
+       from catalogue_endpoints
+       where is_active = true
+       order by endpoint_id asc
+       limit 100`
+    ),
+    pgClient.query(
+      `select distinct dataset_key
+       from cache_loader_jobs
+       order by dataset_key asc
+       limit 100`
+    )
+  ]);
+
+  return {
+    eventTypes: eventTypes.rows.map((row) => row.event_type).filter(Boolean),
+    templates: templates.rows.map((row) => ({
+      template_id: row.template_id,
+      channel: row.channel
+    })),
+    segments: segments.rows.map((row) => row.segment_key).filter(Boolean),
+    endpoints: endpoints.rows.map((row) => ({
+      endpoint_id: row.endpoint_id,
+      method: row.method
+    })),
+    cacheDatasets: cacheDatasets.rows.map((row) => ({
+      dataset_key: row.dataset_key
+    }))
+  };
 }
 
 async function ensureKafkaTopics() {
@@ -650,6 +744,94 @@ app.get('/health', async (_req, res) => {
     await pgClient.query('select 1');
     res.status(200).json({ status: 'ok' });
   } catch (error) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
+app.post('/ai/generate-journey', async (req, res) => {
+  try {
+    const input = AiGenerateJourneySchema.parse(req.body || {});
+    const catalogs = await loadAiCatalogContext();
+    const result = await generateJourneyDraft({
+      prompt: input.prompt,
+      catalogs,
+      existingJourney: input.context?.existingJourney || null
+    });
+
+    res.status(200).json({
+      status: 'ok',
+      provider: result.provider,
+      validation: result.validation,
+      draft: {
+        ...result.draft,
+        version: 1
+      }
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({
+        status: 'error',
+        message: error.issues?.[0]?.message || 'invalid request'
+      });
+      return;
+    }
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
+app.post('/ai/explain-journey', async (req, res) => {
+  try {
+    const input = AiExplainJourneySchema.parse(req.body || {});
+    const catalogs = await loadAiCatalogContext();
+    const result = await explainJourney({
+      journey: input.journey,
+      catalogs
+    });
+
+    res.status(200).json({
+      status: 'ok',
+      provider: result.provider,
+      explanation: result.explanation
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({
+        status: 'error',
+        message: error.issues?.[0]?.message || 'invalid request'
+      });
+      return;
+    }
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
+app.post('/ai/revise-journey', async (req, res) => {
+  try {
+    const input = AiReviseJourneySchema.parse(req.body || {});
+    const catalogs = await loadAiCatalogContext();
+    const result = await reviseJourney({
+      instruction: input.instruction,
+      journey: input.journey,
+      catalogs
+    });
+
+    res.status(200).json({
+      status: 'ok',
+      provider: result.provider,
+      validation: result.validation,
+      draft: {
+        ...result.draft,
+        version: 1
+      }
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({
+        status: 'error',
+        message: error.issues?.[0]?.message || 'invalid request'
+      });
+      return;
+    }
     res.status(500).json({ status: 'error', message: error.message });
   }
 });
