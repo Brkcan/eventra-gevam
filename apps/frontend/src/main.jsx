@@ -2385,7 +2385,7 @@ function App() {
             onClick={() => setShowCopilot((prev) => !prev)}
             disabled={busy}
           >
-            Sor
+            AI Sor
           </button>
         </div>
       </section>
