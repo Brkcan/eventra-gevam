@@ -1210,7 +1210,7 @@ app.get('/management/release-controls', async (_req, res) => {
          l.name,
          l.status,
          coalesce(rc.rollout_percent, 100) as rollout_percent,
-         coalesce(rc.release_paused, false) as release_paused,
+         coalesce(rc.release_paused, 0) as release_paused,
          coalesce(rc.updated_at, l.updated_at) as updated_at
        from latest l
        left join journey_release_controls rc
@@ -1218,7 +1218,15 @@ app.get('/management/release-controls', async (_req, res) => {
        where l.rn = 1
        order by l.journey_id asc`
     );
-    res.status(200).json({ status: 'ok', items: result.rows });
+    res.status(200).json({
+      status: 'ok',
+      items: result.rows.map((row) => ({
+        ...row,
+        journey_version: Number(row.journey_version || 0),
+        rollout_percent: Number(row.rollout_percent || 100),
+        release_paused: Boolean(Number(row.release_paused || 0))
+      }))
+    });
   } catch (error) {
     res.status(500).json({ status: 'error', message: error.message });
   }
