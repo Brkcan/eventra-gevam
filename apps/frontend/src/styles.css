@@ -1681,6 +1681,207 @@ button:disabled {
     "Courier New", monospace;
 }
 
+.cataloguePanelHero,
+.catalogueEndpointHero {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.cataloguePanelWorkspace,
+.catalogueEndpointWorkspace {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+.cataloguePanelMain,
+.catalogueEndpointMain {
+  display: grid;
+  gap: 12px;
+}
+
+.catalogueMethodBadge,
+.catalogueStateBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid #ccd6dc;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+.catalogueMethodBadge.method-get {
+  background: linear-gradient(180deg, #eef9f5, #deefe8);
+  color: #1e6356;
+  border-color: #c7ddd4;
+}
+
+.catalogueMethodBadge.method-post {
+  background: linear-gradient(180deg, #edf3f9, #dde7f0);
+  color: #335372;
+  border-color: #c5d4e2;
+}
+
+.catalogueMethodBadge.method-put,
+.catalogueMethodBadge.method-patch {
+  background: linear-gradient(180deg, #f1f5f8, #e1e8ee);
+  color: #4a5966;
+  border-color: #ced8df;
+}
+
+.catalogueMethodBadge.method-delete {
+  background: linear-gradient(180deg, #fbefef, #f1dddd);
+  color: #8f4a4a;
+  border-color: #e3c5c5;
+}
+
+.catalogueStateBadge.active {
+  background: linear-gradient(180deg, #eef7f4, #dfece8);
+  color: #2f6156;
+  border-color: #cadbd5;
+}
+
+.catalogueStateBadge.passive {
+  background: linear-gradient(180deg, #f3f5f7, #e6eaee);
+  color: #5b6674;
+  border-color: #d5dce3;
+}
+
+.cataloguePanelStats,
+.catalogueEndpointStats {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cataloguePanelTips,
+.catalogueEndpointTips {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.cataloguePanelTip,
+.catalogueEndpointTip {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid #d9dfe4;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(248, 250, 251, 0.98), rgba(243, 246, 247, 0.94));
+}
+
+.cataloguePanelTip strong,
+.catalogueEndpointTip strong {
+  color: #314656;
+  font-size: 12px;
+}
+
+.cataloguePanelTip span,
+.catalogueEndpointTip span {
+  color: #6d7c88;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.cataloguePanelGrid,
+.catalogueEndpointGrid {
+  margin-top: 4px;
+  padding: 18px;
+  border: 1px solid #cfd7dd;
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(251, 252, 252, 0.99), rgba(244, 247, 248, 0.96));
+  box-shadow:
+    0 20px 28px -30px rgba(25, 40, 52, 0.28),
+    0 1px 0 rgba(255, 255, 255, 0.9) inset;
+}
+
+.catalogueEndpointInlineActions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.cataloguePanelCheck,
+.catalogueEndpointCheck {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.cataloguePanelCheck input,
+.catalogueEndpointCheck input {
+  width: auto;
+}
+
+.cataloguePanelActionRow,
+.catalogueEndpointActionRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding-top: 6px;
+  border-top: 1px solid #dde3e7;
+}
+
+.catalogueEndpointCell {
+  display: grid;
+  gap: 3px;
+}
+
+.catalogueEndpointCell small {
+  color: var(--dash-muted);
+  font-size: 11px;
+}
+
+.catalogueEndpointUrlCell {
+  max-width: 480px;
+  word-break: break-word;
+}
+
+.cataloguePanelTableWrap,
+.catalogueEndpointTableWrap {
+  margin-top: 16px;
+  overflow: hidden;
+}
+
+.cataloguePanelTableHead,
+.catalogueEndpointTableHead {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-bottom: 1px solid #d5dde2;
+  background:
+    radial-gradient(circle at top left, rgba(30, 122, 120, 0.1), transparent 30%),
+    linear-gradient(180deg, rgba(252, 253, 253, 0.99), rgba(242, 246, 247, 0.96));
+}
+
+.cataloguePanelTableHead strong,
+.catalogueEndpointTableHead strong {
+  display: block;
+  color: #2a4658;
+  font-size: 15px;
+}
+
+.cataloguePanelTableHead small,
+.catalogueEndpointTableHead small {
+  display: block;
+  margin-top: 4px;
+  color: #74828e;
+  font-size: 12px;
+}
+
 .libraryToolbar {
   display: flex;
   gap: 10px;

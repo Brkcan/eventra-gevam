@@ -103,6 +103,36 @@ const DEFAULT_LISTENER_FORM = {
   log_normalized_event: false
 };
 
+const DEFAULT_ENDPOINT_FORM = {
+  endpoint_id: '',
+  method: 'POST',
+  url: '',
+  headers: '{}',
+  timeout_ms: 5000,
+  description: '',
+  is_active: true
+};
+
+function suggestEndpointIdFromUrl(urlValue, methodValue = 'POST') {
+  const rawUrl = String(urlValue || '').trim();
+  if (!rawUrl) {
+    return '';
+  }
+
+  try {
+    const parsed = new URL(rawUrl);
+    const pathSlug = `${parsed.hostname}${parsed.pathname}`
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .replace(/_+/g, '_');
+    const methodSlug = String(methodValue || 'POST').trim().toLowerCase();
+    return `${methodSlug}_${pathSlug}`.slice(0, 80);
+  } catch {
+    return '';
+  }
+}
+
 function defaultLabelForKind(nodeKind) {
   if (nodeKind === 'trigger') return 'Trigger: cart_add';
   if (nodeKind === 'wait') return 'Wait: 30m';
@@ -564,15 +594,7 @@ function App() {
     variables_csv: '',
     is_active: true
   });
-  const [endpointForm, setEndpointForm] = useState({
-    endpoint_id: '',
-    method: 'POST',
-    url: '',
-    headers: '{}',
-    timeout_ms: 5000,
-    description: '',
-    is_active: true
-  });
+  const [endpointForm, setEndpointForm] = useState(DEFAULT_ENDPOINT_FORM);
   const [selectedJourneyKey, setSelectedJourneyKey] = useState('');
   const [approvalInfo, setApprovalInfo] = useState({
     state: 'none',
@@ -2241,12 +2263,29 @@ function App() {
       if (!response.ok) throw new Error(body.message || `Endpoint save failed: ${response.status}`);
       setStatusText(`Endpoint kaydedildi: ${endpointId}`);
       await fetchCatalogues();
+      setEndpointForm((current) => ({
+        ...DEFAULT_ENDPOINT_FORM,
+        method: current.method
+      }));
     } catch (error) {
       setStatusText(`Endpoint kayit hatasi: ${error.message}`);
     } finally {
       setCataloguesLoading(false);
     }
   }, [endpointForm, fetchCatalogues]);
+
+  const applyEndpointToForm = useCallback((item) => {
+    setEndpointForm({
+      endpoint_id: item?.endpoint_id || '',
+      method: item?.method || 'POST',
+      url: item?.url || '',
+      headers: JSON.stringify(item?.headers || {}, null, 2),
+      timeout_ms: Math.max(100, Number(item?.timeout_ms) || 5000),
+      description: item?.description || '',
+      is_active: Boolean(item?.is_active)
+    });
+    setStatusText(`Endpoint duzenleme moduna alindi: ${item?.endpoint_id || '-'}`);
+  }, []);
 
   const deleteCatalogueItem = useCallback(
     async (type, key) => {
@@ -2756,6 +2795,15 @@ function App() {
     selectedData?.node_kind === 'http_call'
       ? parseJsonText(selectedData.response_mapping_json || '{}')
       : { ok: true };
+  const endpointHeadersValidation = parseJsonText(endpointForm.headers || '{}');
+  const endpointIdSuggestion = useMemo(
+    () => suggestEndpointIdFromUrl(endpointForm.url, endpointForm.method),
+    [endpointForm.method, endpointForm.url]
+  );
+  const activeEndpointCount = useMemo(
+    () => catalogueEndpoints.filter((item) => Boolean(item?.is_active)).length,
+    [catalogueEndpoints]
+  );
 
   useEffect(() => {
     try {
@@ -4561,105 +4609,153 @@ function App() {
           <section className="catalogueSection">
             {catalogueTab === 'events' && (
             <article className="kpiCard dashboardCard">
-              <h3>Event Type Catalogue</h3>
-              <div className="catalogueFormGrid">
-                <label>
-                  event_type
-                  <input
-                    value={eventTypeForm.event_type}
-                    onChange={(e) =>
-                      setEventTypeForm((current) => ({ ...current, event_type: e.target.value }))
-                    }
-                  />
-                </label>
-                <label>
-                  description
-                  <input
-                    value={eventTypeForm.description}
-                    onChange={(e) =>
-                      setEventTypeForm((current) => ({ ...current, description: e.target.value }))
-                    }
-                  />
-                </label>
-                <label>
-                  owner
-                  <input
-                    value={eventTypeForm.owner}
-                    onChange={(e) =>
-                      setEventTypeForm((current) => ({ ...current, owner: e.target.value }))
-                    }
-                  />
-                </label>
-                <label>
-                  version
-                  <input
-                    type="number"
-                    min="1"
-                    value={eventTypeForm.version}
-                    onChange={(e) =>
-                      setEventTypeForm((current) => ({
-                        ...current,
-                        version: Math.max(1, Number(e.target.value) || 1)
-                      }))
-                    }
-                  />
-                </label>
-                <label className="wide">
-                  required_fields (csv)
-                  <input
-                    value={eventTypeForm.required_fields_csv}
-                    onChange={(e) =>
-                      setEventTypeForm((current) => ({
-                        ...current,
-                        required_fields_csv: e.target.value
-                      }))
-                    }
-                    placeholder="customer_id, payload.email, payload.amount"
-                  />
-                </label>
-                <label className="wide">
-                  schema_json (json)
-                  <textarea
-                    value={eventTypeForm.schema_json}
-                    onChange={(e) =>
-                      setEventTypeForm((current) => ({ ...current, schema_json: e.target.value }))
-                    }
-                  />
-                </label>
-                <label className="wide">
-                  sample_payload (json)
-                  <textarea
-                    value={eventTypeForm.sample_payload}
-                    onChange={(e) =>
-                      setEventTypeForm((current) => ({ ...current, sample_payload: e.target.value }))
-                    }
-                  />
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(eventTypeForm.is_active)}
-                    onChange={(e) =>
-                      setEventTypeForm((current) => ({ ...current, is_active: e.target.checked }))
-                    }
-                  />
-                  active
-                </label>
-                <button type="button" className="primary" onClick={saveEventType} disabled={cataloguesLoading}>
-                  Kaydet
-                </button>
+              <div className="cataloguePanelHero">
+                <div>
+                  <h3>Event Tanimlari</h3>
+                  <p className="panelHint">Journey tetikleyicilerinde kullanilacak event tiplerini burada tanimlarsin.</p>
+                </div>
               </div>
-              <div className="dashboardTableWrap">
+              <div className="cataloguePanelWorkspace">
+                <div className="cataloguePanelTips">
+                  <div className="cataloguePanelTip">
+                    <strong>1. Event adini sabitle</strong>
+                    <span>Teknik isim zamanla degismeyecek sekilde belirlenmeli. Ornek: <code>loan_application_started</code></span>
+                  </div>
+                  <div className="cataloguePanelTip">
+                    <strong>2. Zorunlu alanlari yaz</strong>
+                    <span>Designer ve entegrasyon ekipleri hangi alanlarin gelmesi gerektigini buradan gorur.</span>
+                  </div>
+                  <div className="cataloguePanelTip">
+                    <strong>3. Ornek payload ekle</strong>
+                    <span>Test ve mapping asamalarinda kullanmak icin gercege yakin bir ornek ekle.</span>
+                  </div>
+                </div>
+                <div className="catalogueFormGrid cataloguePanelGrid">
+                  <label>
+                    Event Adi
+                    <input
+                      value={eventTypeForm.event_type}
+                      onChange={(e) =>
+                        setEventTypeForm((current) => ({ ...current, event_type: e.target.value }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Sorumlu Ekip
+                    <input
+                      value={eventTypeForm.owner}
+                      onChange={(e) =>
+                        setEventTypeForm((current) => ({ ...current, owner: e.target.value }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Versiyon
+                    <input
+                      type="number"
+                      min="1"
+                      value={eventTypeForm.version}
+                      onChange={(e) =>
+                        setEventTypeForm((current) => ({
+                          ...current,
+                          version: Math.max(1, Number(e.target.value) || 1)
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="wide">
+                    Aciklama
+                    <input
+                      value={eventTypeForm.description}
+                      onChange={(e) =>
+                        setEventTypeForm((current) => ({ ...current, description: e.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="wide">
+                    Zorunlu Alanlar
+                    <input
+                      value={eventTypeForm.required_fields_csv}
+                      onChange={(e) =>
+                        setEventTypeForm((current) => ({
+                          ...current,
+                          required_fields_csv: e.target.value
+                        }))
+                      }
+                      placeholder="customer_id, payload.email, payload.amount"
+                    />
+                  </label>
+                  <label className="wide">
+                    Schema JSON
+                    <textarea
+                      value={eventTypeForm.schema_json}
+                      onChange={(e) =>
+                        setEventTypeForm((current) => ({ ...current, schema_json: e.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="wide">
+                    Ornek Payload
+                    <textarea
+                      value={eventTypeForm.sample_payload}
+                      onChange={(e) =>
+                        setEventTypeForm((current) => ({ ...current, sample_payload: e.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="cataloguePanelCheck">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(eventTypeForm.is_active)}
+                      onChange={(e) =>
+                        setEventTypeForm((current) => ({ ...current, is_active: e.target.checked }))
+                      }
+                    />
+                    Designer icinde aktif olsun
+                  </label>
+                  <div className="cataloguePanelActionRow">
+                    <button type="button" className="primary" onClick={saveEventType} disabled={cataloguesLoading}>
+                      Kaydet
+                    </button>
+                    <button
+                      type="button"
+                      className="secondaryButton"
+                      onClick={() =>
+                        setEventTypeForm({
+                          event_type: '',
+                          description: '',
+                          owner: '',
+                          version: 1,
+                          required_fields_csv: '',
+                          schema_json: '{}',
+                          sample_payload: '{}',
+                          is_active: true
+                        })
+                      }
+                      disabled={cataloguesLoading}
+                    >
+                      Formu Temizle
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="dashboardTableWrap cataloguePanelTableWrap">
+                <div className="cataloguePanelTableHead">
+                  <div>
+                    <strong>Kayitli Event Tanimlari</strong>
+                    <small>Mevcut event tipleri journey designer ve entegrasyon katmaninda ortak referans olarak kullanilir.</small>
+                  </div>
+                </div>
                 <table className="journeyLogsTable">
                   <thead>
                     <tr>
-                      <th>event_type</th>
-                      <th>owner</th>
-                      <th>version</th>
-                      <th>required_fields</th>
-                      <th>description</th>
-                      <th>active</th>
-                      <th>islem</th>
+                      <th>Event</th>
+                      <th>Ekip</th>
+                      <th>Versiyon</th>
+                      <th>Zorunlu Alanlar</th>
+                      <th>Aciklama</th>
+                      <th>Durum</th>
+                      <th>Islem</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -4670,7 +4766,11 @@ function App() {
                         <td>{item.version || 1}</td>
                         <td>{Array.isArray(item.required_fields) ? item.required_fields.join(', ') : '-'}</td>
                         <td>{item.description}</td>
-                        <td>{item.is_active ? 'true' : 'false'}</td>
+                        <td>
+                          <span className={`catalogueStateBadge ${item.is_active ? 'active' : 'passive'}`}>
+                            {item.is_active ? 'Aktif' : 'Pasif'}
+                          </span>
+                        </td>
                         <td>
                           <button
                             type="button"
@@ -4684,7 +4784,7 @@ function App() {
                     ))}
                     {catalogueEventTypes.length === 0 && (
                       <tr>
-                        <td colSpan={7}>Event type yok.</td>
+                        <td colSpan={7}>Henuz event tanimi yok.</td>
                       </tr>
                     )}
                   </tbody>
@@ -4695,73 +4795,118 @@ function App() {
 
             {catalogueTab === 'segments' && (
             <article className="kpiCard dashboardCard">
-              <h3>Segment Catalogue</h3>
-              <div className="catalogueFormGrid">
-                <label>
-                  segment_key
-                  <input
-                    value={segmentForm.segment_key}
-                    onChange={(e) =>
-                      setSegmentForm((current) => ({ ...current, segment_key: e.target.value }))
-                    }
-                    placeholder="vip, new_user, risk_high"
-                  />
-                </label>
-                <label>
-                  display_name
-                  <input
-                    value={segmentForm.display_name}
-                    onChange={(e) =>
-                      setSegmentForm((current) => ({ ...current, display_name: e.target.value }))
-                    }
-                  />
-                </label>
-                <label className="wide">
-                  rule_expression
-                  <input
-                    value={segmentForm.rule_expression}
-                    onChange={(e) =>
-                      setSegmentForm((current) => ({
-                        ...current,
-                        rule_expression: e.target.value
-                      }))
-                    }
-                    placeholder="attributes.tier >= 3 && attributes.risk != 'high'"
-                  />
-                </label>
-                <label className="wide">
-                  description
-                  <input
-                    value={segmentForm.description}
-                    onChange={(e) =>
-                      setSegmentForm((current) => ({ ...current, description: e.target.value }))
-                    }
-                  />
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(segmentForm.is_active)}
-                    onChange={(e) =>
-                      setSegmentForm((current) => ({ ...current, is_active: e.target.checked }))
-                    }
-                  />
-                  active
-                </label>
-                <button type="button" className="primary" onClick={saveSegment} disabled={cataloguesLoading}>
-                  Kaydet
-                </button>
+              <div className="cataloguePanelHero">
+                <div>
+                  <h3>Segment Tanimlari</h3>
+                  <p className="panelHint">Condition node'larinda ve hedefleme kurallarinda kullanilacak musteri segmentlerini yonet.</p>
+                </div>
               </div>
-              <div className="dashboardTableWrap">
+              <div className="cataloguePanelWorkspace">
+                <div className="cataloguePanelTips">
+                  <div className="cataloguePanelTip">
+                    <strong>1. Kisa anahtar belirle</strong>
+                    <span>Teknik kullanim icin kisa bir anahtar sec. Ornek: <code>premium</code></span>
+                  </div>
+                  <div className="cataloguePanelTip">
+                    <strong>2. Gorunen ismi yaz</strong>
+                    <span>Operator ekranda daha anlasilir bir isim gorur. Ornek: <code>Premium Musteri</code></span>
+                  </div>
+                  <div className="cataloguePanelTip">
+                    <strong>3. Kurali belgele</strong>
+                    <span>Segmentin nasil hesaplandigini rule expression ve aciklama ile netlestir.</span>
+                  </div>
+                </div>
+                <div className="catalogueFormGrid cataloguePanelGrid">
+                  <label>
+                    Segment Anahtari
+                    <input
+                      value={segmentForm.segment_key}
+                      onChange={(e) =>
+                        setSegmentForm((current) => ({ ...current, segment_key: e.target.value }))
+                      }
+                      placeholder="vip, new_user, risk_high"
+                    />
+                  </label>
+                  <label>
+                    Gorunen Ad
+                    <input
+                      value={segmentForm.display_name}
+                      onChange={(e) =>
+                        setSegmentForm((current) => ({ ...current, display_name: e.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="wide">
+                    Kural Ifadesi
+                    <input
+                      value={segmentForm.rule_expression}
+                      onChange={(e) =>
+                        setSegmentForm((current) => ({
+                          ...current,
+                          rule_expression: e.target.value
+                        }))
+                      }
+                      placeholder="attributes.tier >= 3 && attributes.risk != 'high'"
+                    />
+                  </label>
+                  <label className="wide">
+                    Aciklama
+                    <input
+                      value={segmentForm.description}
+                      onChange={(e) =>
+                        setSegmentForm((current) => ({ ...current, description: e.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="cataloguePanelCheck">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(segmentForm.is_active)}
+                      onChange={(e) =>
+                        setSegmentForm((current) => ({ ...current, is_active: e.target.checked }))
+                      }
+                    />
+                    Designer icinde aktif olsun
+                  </label>
+                  <div className="cataloguePanelActionRow">
+                    <button type="button" className="primary" onClick={saveSegment} disabled={cataloguesLoading}>
+                      Kaydet
+                    </button>
+                    <button
+                      type="button"
+                      className="secondaryButton"
+                      onClick={() =>
+                        setSegmentForm({
+                          segment_key: '',
+                          display_name: '',
+                          rule_expression: '',
+                          description: '',
+                          is_active: true
+                        })
+                      }
+                      disabled={cataloguesLoading}
+                    >
+                      Formu Temizle
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="dashboardTableWrap cataloguePanelTableWrap">
+                <div className="cataloguePanelTableHead">
+                  <div>
+                    <strong>Kayitli Segmentler</strong>
+                    <small>Bu segmentler condition secimlerinde ve hedefleme adimlarinda tekrar kullanilir.</small>
+                  </div>
+                </div>
                 <table className="journeyLogsTable">
                   <thead>
                     <tr>
-                      <th>segment_key</th>
-                      <th>display_name</th>
-                      <th>rule_expression</th>
-                      <th>description</th>
-                      <th>active</th>
-                      <th>islem</th>
+                      <th>Segment</th>
+                      <th>Gorunen Ad</th>
+                      <th>Kural</th>
+                      <th>Aciklama</th>
+                      <th>Durum</th>
+                      <th>Islem</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -4771,7 +4916,11 @@ function App() {
                         <td>{item.display_name}</td>
                         <td>{item.rule_expression}</td>
                         <td>{item.description}</td>
-                        <td>{item.is_active ? 'true' : 'false'}</td>
+                        <td>
+                          <span className={`catalogueStateBadge ${item.is_active ? 'active' : 'passive'}`}>
+                            {item.is_active ? 'Aktif' : 'Pasif'}
+                          </span>
+                        </td>
                         <td>
                           <button
                             type="button"
@@ -4785,7 +4934,7 @@ function App() {
                     ))}
                     {catalogueSegments.length === 0 && (
                       <tr>
-                        <td colSpan={6}>Segment yok.</td>
+                        <td colSpan={6}>Henuz segment tanimi yok.</td>
                       </tr>
                     )}
                   </tbody>
@@ -4796,81 +4945,127 @@ function App() {
 
             {catalogueTab === 'templates' && (
             <article className="kpiCard dashboardCard">
-              <h3>Template Catalogue</h3>
-              <div className="catalogueFormGrid">
-                <label>
-                  template_id
-                  <input
-                    value={templateForm.template_id}
-                    onChange={(e) =>
-                      setTemplateForm((current) => ({ ...current, template_id: e.target.value }))
-                    }
-                  />
-                </label>
-                <label>
-                  channel
-                  <select
-                    value={templateForm.channel}
-                    onChange={(e) =>
-                      setTemplateForm((current) => ({ ...current, channel: e.target.value }))
-                    }
-                  >
-                    <option value="email">email</option>
-                    <option value="sms">sms</option>
-                    <option value="push">push</option>
-                  </select>
-                </label>
-                <label>
-                  subject
-                  <input
-                    value={templateForm.subject}
-                    onChange={(e) =>
-                      setTemplateForm((current) => ({ ...current, subject: e.target.value }))
-                    }
-                  />
-                </label>
-                <label>
-                  variables (csv)
-                  <input
-                    value={templateForm.variables_csv}
-                    onChange={(e) =>
-                      setTemplateForm((current) => ({ ...current, variables_csv: e.target.value }))
-                    }
-                    placeholder="name,amount,segment"
-                  />
-                </label>
-                <label className="wide">
-                  body
-                  <textarea
-                    value={templateForm.body}
-                    onChange={(e) =>
-                      setTemplateForm((current) => ({ ...current, body: e.target.value }))
-                    }
-                  />
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(templateForm.is_active)}
-                    onChange={(e) =>
-                      setTemplateForm((current) => ({ ...current, is_active: e.target.checked }))
-                    }
-                  />
-                  active
-                </label>
-                <button type="button" className="primary" onClick={saveTemplate} disabled={cataloguesLoading}>
-                  Kaydet
-                </button>
+              <div className="cataloguePanelHero">
+                <div>
+                  <h3>Mesaj Sablonlari</h3>
+                  <p className="panelHint">Email, SMS ve push aksiyonlarinda kullanilacak mesaj sablonlarini burada yonet.</p>
+                </div>
               </div>
-              <div className="dashboardTableWrap">
+              <div className="cataloguePanelWorkspace">
+                <div className="cataloguePanelTips">
+                  <div className="cataloguePanelTip">
+                    <strong>1. Sablonu adlandir</strong>
+                    <span>Teknik olarak secilebilir bir anahtar kullan. Ornek: <code>loan_offer_sms</code></span>
+                  </div>
+                  <div className="cataloguePanelTip">
+                    <strong>2. Kanal sec</strong>
+                    <span>Ayni mesaj mantigini email, sms veya push icin ayri sablonlar halinde yonetebilirsin.</span>
+                  </div>
+                  <div className="cataloguePanelTip">
+                    <strong>3. Degiskenleri yaz</strong>
+                    <span>Mesaj govdesinde kullanilacak alanlari CSV olarak kaydet. Ornek: <code>name,amount,expiry_date</code></span>
+                  </div>
+                </div>
+                <div className="catalogueFormGrid cataloguePanelGrid">
+                  <label>
+                    Sablon Anahtari
+                    <input
+                      value={templateForm.template_id}
+                      onChange={(e) =>
+                        setTemplateForm((current) => ({ ...current, template_id: e.target.value }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Kanal
+                    <select
+                      value={templateForm.channel}
+                      onChange={(e) =>
+                        setTemplateForm((current) => ({ ...current, channel: e.target.value }))
+                      }
+                    >
+                      <option value="email">email</option>
+                      <option value="sms">sms</option>
+                      <option value="push">push</option>
+                    </select>
+                  </label>
+                  <label className="wide">
+                    Baslik / Konu
+                    <input
+                      value={templateForm.subject}
+                      onChange={(e) =>
+                        setTemplateForm((current) => ({ ...current, subject: e.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="wide">
+                    Degiskenler
+                    <input
+                      value={templateForm.variables_csv}
+                      onChange={(e) =>
+                        setTemplateForm((current) => ({ ...current, variables_csv: e.target.value }))
+                      }
+                      placeholder="name,amount,segment"
+                    />
+                  </label>
+                  <label className="wide">
+                    Mesaj Govdesi
+                    <textarea
+                      value={templateForm.body}
+                      onChange={(e) =>
+                        setTemplateForm((current) => ({ ...current, body: e.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="cataloguePanelCheck">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(templateForm.is_active)}
+                      onChange={(e) =>
+                        setTemplateForm((current) => ({ ...current, is_active: e.target.checked }))
+                      }
+                    />
+                    Designer icinde aktif olsun
+                  </label>
+                  <div className="cataloguePanelActionRow">
+                    <button type="button" className="primary" onClick={saveTemplate} disabled={cataloguesLoading}>
+                      Kaydet
+                    </button>
+                    <button
+                      type="button"
+                      className="secondaryButton"
+                      onClick={() =>
+                        setTemplateForm({
+                          template_id: '',
+                          channel: 'email',
+                          subject: '',
+                          body: '',
+                          variables_csv: '',
+                          is_active: true
+                        })
+                      }
+                      disabled={cataloguesLoading}
+                    >
+                      Formu Temizle
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="dashboardTableWrap cataloguePanelTableWrap">
+                <div className="cataloguePanelTableHead">
+                  <div>
+                    <strong>Kayitli Mesaj Sablonlari</strong>
+                    <small>Journey aksiyonlarinda secilebilecek hazir mesaj sablonlari burada listelenir.</small>
+                  </div>
+                </div>
                 <table className="journeyLogsTable">
                   <thead>
                     <tr>
-                      <th>template_id</th>
-                      <th>channel</th>
-                      <th>subject</th>
-                      <th>active</th>
-                      <th>islem</th>
+                      <th>Sablon</th>
+                      <th>Kanal</th>
+                      <th>Baslik</th>
+                      <th>Durum</th>
+                      <th>Islem</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -4879,7 +5074,11 @@ function App() {
                         <td>{item.template_id}</td>
                         <td>{item.channel}</td>
                         <td>{item.subject}</td>
-                        <td>{item.is_active ? 'true' : 'false'}</td>
+                        <td>
+                          <span className={`catalogueStateBadge ${item.is_active ? 'active' : 'passive'}`}>
+                            {item.is_active ? 'Aktif' : 'Pasif'}
+                          </span>
+                        </td>
                         <td>
                           <button
                             type="button"
@@ -4893,7 +5092,7 @@ function App() {
                     ))}
                     {catalogueTemplates.length === 0 && (
                       <tr>
-                        <td colSpan={5}>Template yok.</td>
+                        <td colSpan={5}>Henuz mesaj sablonu yok.</td>
                       </tr>
                     )}
                   </tbody>
@@ -4904,106 +5103,213 @@ function App() {
 
             {catalogueTab === 'endpoints' && (
             <article className="kpiCard dashboardCard">
-              <h3>Endpoint Catalogue</h3>
-              <div className="catalogueFormGrid">
-                <label>
-                  endpoint_id
-                  <input
-                    value={endpointForm.endpoint_id}
-                    onChange={(e) =>
-                      setEndpointForm((current) => ({ ...current, endpoint_id: e.target.value }))
-                    }
-                  />
-                </label>
-                <label>
-                  method
-                  <select
-                    value={endpointForm.method}
-                    onChange={(e) =>
-                      setEndpointForm((current) => ({ ...current, method: e.target.value }))
-                    }
-                  >
-                    <option value="GET">GET</option>
-                    <option value="POST">POST</option>
-                    <option value="PUT">PUT</option>
-                    <option value="PATCH">PATCH</option>
-                    <option value="DELETE">DELETE</option>
-                  </select>
-                </label>
-                <label>
-                  timeout_ms
-                  <input
-                    type="number"
-                    min="100"
-                    value={endpointForm.timeout_ms}
-                    onChange={(e) =>
-                      setEndpointForm((current) => ({
-                        ...current,
-                        timeout_ms: Math.max(100, Number(e.target.value) || 100)
-                      }))
-                    }
-                  />
-                </label>
-                <label className="wide">
-                  url
-                  <input
-                    value={endpointForm.url}
-                    onChange={(e) =>
-                      setEndpointForm((current) => ({ ...current, url: e.target.value }))
-                    }
-                  />
-                </label>
-                <label className="wide">
-                  headers (json)
-                  <textarea
-                    value={endpointForm.headers}
-                    onChange={(e) =>
-                      setEndpointForm((current) => ({ ...current, headers: e.target.value }))
-                    }
-                  />
-                </label>
-                <label className="wide">
-                  description
-                  <input
-                    value={endpointForm.description}
-                    onChange={(e) =>
-                      setEndpointForm((current) => ({ ...current, description: e.target.value }))
-                    }
-                  />
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(endpointForm.is_active)}
-                    onChange={(e) =>
-                      setEndpointForm((current) => ({ ...current, is_active: e.target.checked }))
-                    }
-                  />
-                  active
-                </label>
-                <button type="button" className="primary" onClick={saveEndpoint} disabled={cataloguesLoading}>
-                  Kaydet
-                </button>
+              <div className="catalogueEndpointHero">
+                <div>
+                  <h3>Entegrasyon Hedefleri</h3>
+                  <p className="panelHint">
+                    Journey icindeki HTTP adimlarinda kullanilacak servis hedeflerini burada tanimlarsin.
+                  </p>
+                </div>
+                <div className="catalogueEndpointStats">
+                  <span className="dashboardChip">Toplam: {catalogueEndpoints.length}</span>
+                  <span className="dashboardChip">Aktif: {activeEndpointCount}</span>
+                </div>
               </div>
-              <div className="dashboardTableWrap">
+
+              <div className="catalogueEndpointWorkspace">
+                <div className="catalogueEndpointMain">
+                  <div className="catalogueEndpointTips">
+                    <div className="catalogueEndpointTip">
+                      <strong>1. Hedefi adlandir</strong>
+                      <span>Kisa ve tekrar kullanilabilir bir isim ver. Ornek: <code>post_risk_score</code></span>
+                    </div>
+                    <div className="catalogueEndpointTip">
+                      <strong>2. Servis adresini gir</strong>
+                      <span>Tam URL kullan. Ornek: <code>https://bank-api.local/risk/score</code></span>
+                    </div>
+                    <div className="catalogueEndpointTip">
+                      <strong>3. Varsayilan headerlari ekle</strong>
+                      <span>Authorization, tenant veya content-type gibi sabit headerlari JSON olarak kaydet.</span>
+                    </div>
+                  </div>
+
+                  <div className="catalogueFormGrid catalogueEndpointGrid">
+                    <label>
+                      Teknik Endpoint Adi
+                      <input
+                        placeholder="post_risk_score"
+                        value={endpointForm.endpoint_id}
+                        onChange={(e) =>
+                          setEndpointForm((current) => ({ ...current, endpoint_id: e.target.value }))
+                        }
+                      />
+                      <small className="fieldHelp">
+                        Journey designer icinde secilecek sabit anahtar.
+                        {!String(endpointForm.endpoint_id || '').trim() && endpointIdSuggestion
+                          ? ` Oneri: ${endpointIdSuggestion}`
+                          : ''}
+                      </small>
+                    </label>
+                    <label>
+                      Istek Tipi
+                      <select
+                        value={endpointForm.method}
+                        onChange={(e) =>
+                          setEndpointForm((current) => ({ ...current, method: e.target.value }))
+                        }
+                      >
+                        <option value="GET">GET</option>
+                        <option value="POST">POST</option>
+                        <option value="PUT">PUT</option>
+                        <option value="PATCH">PATCH</option>
+                        <option value="DELETE">DELETE</option>
+                      </select>
+                      <small className="fieldHelp">Servise hangi HTTP metodu ile gidilecegi.</small>
+                    </label>
+                    <label>
+                      Timeout
+                      <input
+                        type="number"
+                        min="100"
+                        value={endpointForm.timeout_ms}
+                        onChange={(e) =>
+                          setEndpointForm((current) => ({
+                            ...current,
+                            timeout_ms: Math.max(100, Number(e.target.value) || 100)
+                          }))
+                        }
+                      />
+                      <small className="fieldHelp">Milisaniye cinsinden bekleme suresi. Ornek: 5000</small>
+                    </label>
+                    <label className="wide">
+                      Servis Adresi
+                      <input
+                        placeholder="https://bank-api.local/risk/score"
+                        value={endpointForm.url}
+                        onChange={(e) =>
+                          setEndpointForm((current) => ({ ...current, url: e.target.value }))
+                        }
+                      />
+                      <small className="fieldHelp">Tam URL beklenir. Journey bu adrese cagrı atar.</small>
+                    </label>
+                    <label className="wide">
+                      Aciklama
+                      <input
+                        placeholder="Kredi skorlama servisi"
+                        value={endpointForm.description}
+                        onChange={(e) =>
+                          setEndpointForm((current) => ({ ...current, description: e.target.value }))
+                        }
+                      />
+                      <small className="fieldHelp">Operator ekraninda bu endpoint'in ne ise yaradigini anlat.</small>
+                    </label>
+                    <label className="wide">
+                      Varsayilan Headerlar
+                      <textarea
+                        value={endpointForm.headers}
+                        onChange={(e) =>
+                          setEndpointForm((current) => ({ ...current, headers: e.target.value }))
+                        }
+                      />
+                      <div className="catalogueEndpointInlineActions">
+                        <button
+                          type="button"
+                          className="secondaryButton"
+                          onClick={() =>
+                            setEndpointForm((current) => {
+                              const parsed = parseJsonText(current.headers || '{}');
+                              if (!parsed.ok) {
+                                setStatusText(`headers JSON hatasi: ${parsed.message}`);
+                                return current;
+                              }
+                              return { ...current, headers: JSON.stringify(parsed.value, null, 2) };
+                            })
+                          }
+                        >
+                          JSON Duzenle
+                        </button>
+                        <small className="fieldHelp">Ornek: <code>{'{"Authorization":"Bearer ...","Content-Type":"application/json"}'}</code></small>
+                      </div>
+                      {!endpointHeadersValidation.ok && (
+                        <small className="fieldError">JSON hatasi: {endpointHeadersValidation.message}</small>
+                      )}
+                      {endpointHeadersValidation.ok && (
+                        <small className="fieldSuccess">Header JSON gecerli</small>
+                      )}
+                    </label>
+                    <label className="catalogueEndpointCheck">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(endpointForm.is_active)}
+                        onChange={(e) =>
+                          setEndpointForm((current) => ({ ...current, is_active: e.target.checked }))
+                        }
+                      />
+                      Journey designer'da secilebilir olsun
+                    </label>
+                    <div className="catalogueEndpointActionRow">
+                      <button type="button" className="primary" onClick={saveEndpoint} disabled={cataloguesLoading}>
+                        Kaydet
+                      </button>
+                      <button
+                        type="button"
+                        className="secondaryButton"
+                        onClick={() => setEndpointForm(DEFAULT_ENDPOINT_FORM)}
+                        disabled={cataloguesLoading}
+                      >
+                        Formu Temizle
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="dashboardTableWrap catalogueEndpointTableWrap">
+                <div className="catalogueEndpointTableHead">
+                  <div>
+                    <strong>Kayitli Endpointler</strong>
+                    <small>Var olan entegrasyon hedeflerini buradan secip tekrar kullanabilir veya duzenleyebilirsin.</small>
+                  </div>
+                </div>
                 <table className="journeyLogsTable">
                   <thead>
                     <tr>
-                      <th>endpoint_id</th>
-                      <th>method</th>
-                      <th>url</th>
-                      <th>active</th>
-                      <th>islem</th>
+                      <th>Endpoint</th>
+                      <th>Istek</th>
+                      <th>Adres</th>
+                      <th>Durum</th>
+                      <th>Islem</th>
                     </tr>
                   </thead>
                   <tbody>
                     {catalogueEndpoints.map((item) => (
                       <tr key={item.endpoint_id}>
-                        <td>{item.endpoint_id}</td>
-                        <td>{item.method}</td>
-                        <td>{item.url}</td>
-                        <td>{item.is_active ? 'true' : 'false'}</td>
                         <td>
+                          <div className="catalogueEndpointCell">
+                            <strong>
+                              <span className={`catalogueMethodBadge method-${String(item.method || 'POST').toLowerCase()}`}>
+                                {item.method}
+                              </span>{' '}
+                              {item.endpoint_id}
+                            </strong>
+                            <small>{item.description || 'Aciklama girilmemis'}</small>
+                          </div>
+                        </td>
+                        <td>{item.method}</td>
+                        <td className="catalogueEndpointUrlCell">{item.url}</td>
+                        <td>
+                          <span className={`catalogueStateBadge ${item.is_active ? 'active' : 'passive'}`}>
+                            {item.is_active ? 'Aktif' : 'Pasif'}
+                          </span>
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            onClick={() => applyEndpointToForm(item)}
+                            disabled={cataloguesLoading}
+                          >
+                            Kullan
+                          </button>
                           <button
                             type="button"
                             onClick={() => deleteCatalogueItem('endpoint', item.endpoint_id)}
@@ -5016,7 +5322,7 @@ function App() {
                     ))}
                     {catalogueEndpoints.length === 0 && (
                       <tr>
-                        <td colSpan={5}>Endpoint yok.</td>
+                        <td colSpan={5}>Henuz endpoint tanimi yok. Yukaridaki form ile ilk entegrasyon hedefini ekleyebilirsin.</td>
                       </tr>
                     )}
                   </tbody>
