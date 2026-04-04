@@ -1,0 +1,404 @@
+:root {
+  color-scheme: light;
+  font-family: "Space Grotesk", "Segoe UI", sans-serif;
+  --bg: #eef2f9;
+  --panel: rgba(255, 255, 255, 0.95);
+  --line: #d5dceb;
+  --text: #1f2b44;
+  --muted: #66748f;
+  --accent: #ff640a;
+  --accent-2: #e95400;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: linear-gradient(160deg, #eef2f9, #f8fafc 55%, #edf3ff);
+  color: var(--text);
+}
+
+button, input, textarea { font: inherit; }
+
+button {
+  border: 1px solid #ccb38e;
+  border-radius: 12px;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, #faefdf, #f3e3cb);
+  color: #4f3b21;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button.primary {
+  background: linear-gradient(180deg, var(--accent), var(--accent-2));
+  border-color: var(--accent-2);
+  color: #fff;
+}
+
+button.danger {
+  background: linear-gradient(180deg, #cf6354, #b53d2d);
+  border-color: #9d2f22;
+  color: #fff;
+}
+
+.kafkaUiShell { min-height: 100vh; display: grid; grid-template-columns: 280px 1fr; }
+.kafkaSidebar {
+  border-right: 1px solid #193f95;
+  background: linear-gradient(180deg, #0d3a9d, #0f3a95 55%, #0c2f79);
+  color: #e7efff;
+  padding: 18px 14px;
+}
+
+.kafkaBrand { font-weight: 900; letter-spacing: 1px; margin-bottom: 16px; }
+.kafkaPrimaryButton { width: 100%; margin-bottom: 14px; }
+.kafkaMenu {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.kafkaSearchInput {
+  width: 100%;
+  margin-bottom: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #eaf0ff;
+  padding: 10px 12px;
+}
+
+.kafkaSearchInput::placeholder {
+  color: rgba(234, 240, 255, 0.72);
+}
+
+.kafkaMenuItem {
+  text-align: left;
+  width: 100%;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.06);
+  color: #eaf0ff;
+}
+.kafkaMenuItem.active {
+  background: rgba(255,255,255,0.18);
+  border-color: rgba(255,255,255,0.35);
+}
+.kafkaList { display: grid; gap: 8px; }
+
+.kafkaListItem {
+  text-align: left;
+  width: 100%;
+  display: grid;
+  gap: 2px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.08);
+  color: #eaf0ff;
+}
+
+.kafkaListItem.active {
+  background: rgba(255,255,255,0.18);
+  border-color: rgba(255,255,255,0.35);
+}
+
+.kafkaListItemHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.kafkaListItem span, .kafkaListItem small { color: #d4e1ff; }
+.kafkaEmptyState {
+  border: 1px dashed rgba(255, 255, 255, 0.22);
+  border-radius: 12px;
+  padding: 14px 12px;
+  color: #d4e1ff;
+  font-size: 13px;
+}
+.kafkaPage { display: flex; flex-direction: column; min-width: 0; }
+
+.kafkaHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 250, 241, 0.88);
+}
+
+.kafkaHeader h1 { margin: 0 0 4px; }
+.kafkaHeader p { margin: 0; color: var(--muted); }
+.kafkaHeaderActions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.kafkaStatusRow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px 20px 0;
+}
+
+.kafkaStatusCard, .kafkaPanel {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel);
+  box-shadow: 0 22px 50px -38px rgba(23,34,62,0.45);
+}
+
+.kafkaStatusCard { padding: 14px 16px; }
+.kafkaStatusCard span { display: block; font-size: 12px; color: var(--muted); }
+.kafkaStatusCard strong { display: block; margin-top: 6px; font-size: 28px; }
+
+.kafkaWorkspace {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 16px 20px 20px;
+}
+
+.kafkaPanelSingle {
+  min-height: calc(100vh - 260px);
+}
+
+.kafkaAccordionList {
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px;
+}
+
+.kafkaAccordionItem {
+  border: 1px solid #e4e9f2;
+  border-radius: 16px;
+  background: #fbfdff;
+}
+
+.kafkaAccordionTrigger {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 16px;
+  padding: 14px 16px;
+  color: var(--text);
+}
+
+.kafkaAccordionItem.active .kafkaAccordionTrigger {
+  border-bottom: 1px solid #e4e9f2;
+  border-radius: 16px 16px 0 0;
+}
+
+.kafkaPanelHead { padding: 16px 18px 0; }
+.kafkaPanelHead h2 { margin: 0; }
+.kafkaPanelHead small { color: var(--muted); }
+
+.kafkaFormGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px 18px;
+}
+
+.kafkaFormGrid label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #5a4a32;
+}
+
+.kafkaFormGrid input, .kafkaFormGrid textarea {
+  width: 100%;
+  border: 1px solid #ccb38e;
+  border-radius: 12px;
+  background: #fffdf8;
+  padding: 10px;
+}
+
+.kafkaTextarea { grid-column: 1 / -1; }
+.kafkaTextarea textarea {
+  min-height: 280px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.kafkaCheck { grid-template-columns: auto 1fr; align-items: center; gap: 8px; }
+.kafkaCheck input { width: auto; }
+.kafkaPanelActions { display: flex; gap: 8px; padding: 0 18px 18px; }
+
+.kafkaPreviewGrid {
+  grid-template-columns: 1fr;
+}
+
+.kafkaPreviewResults {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  padding: 0 18px 18px;
+}
+
+.kafkaPreviewResults h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.kafkaPreviewResults pre {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid #e4e9f2;
+  border-radius: 12px;
+  background: #fbfdff;
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.kafkaTable {
+  width: calc(100% - 36px);
+  margin: 16px 18px 18px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.kafkaTable th, .kafkaTable td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #e4e9f2;
+  text-align: left;
+  vertical-align: top;
+}
+
+.kafkaStatusBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 74px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.kafkaStatusBadge.small {
+  min-width: 0;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.kafkaStatusBadge.status-running {
+  background: #dff7e8;
+  color: #1d7b42;
+}
+
+.kafkaStatusBadge.status-error {
+  background: #fde4e1;
+  color: #b23d31;
+}
+
+.kafkaStatusBadge.status-disabled,
+.kafkaStatusBadge.status-configured {
+  background: #eef2f8;
+  color: #61718d;
+}
+
+.kafkaStatusBadge.status-starting {
+  background: #fff0d9;
+  color: #b96b12;
+}
+
+.kafkaFooter {
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--line);
+  color: #5b4328;
+  background: rgba(255,252,245,0.85);
+}
+
+.mappingBuilderHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.mappingBuilderTable {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #e4e9f2;
+  border-radius: 14px;
+  background: #fff;
+  padding: 10px;
+}
+
+.mappingBuilderRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.mappingBuilderRow.head {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mappingDeleteButton {
+  min-width: 42px;
+  padding-inline: 0;
+  border-color: #dcb08c;
+}
+
+.mappingBuilderEmpty {
+  padding: 10px 4px 2px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.jsonTreePanel {
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid #e4e9f2;
+  border-radius: 12px;
+  background: #fbfdff;
+  padding: 12px;
+}
+
+.jsonTreeBlock {
+  display: grid;
+  gap: 4px;
+}
+
+.jsonTreeRow {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  line-height: 1.45;
+  font-size: 12px;
+}
+
+.jsonTreeKey {
+  color: #435372;
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.jsonTreeValue {
+  color: #1f2b44;
+  word-break: break-word;
+}
+
+@media (max-width: 1100px) {
+  .kafkaUiShell { grid-template-columns: 1fr; }
+  .kafkaSidebar { border-right: 0; border-bottom: 1px solid #193f95; }
+  .kafkaStatusRow, .kafkaFormGrid { grid-template-columns: 1fr; }
+  .mappingBuilderRow {
+    grid-template-columns: 1fr;
+  }
+  .mappingBuilderRow.head {
+    display: none;
+  }
+}

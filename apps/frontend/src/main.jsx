@@ -49,7 +49,25 @@ function resolveApiBaseUrl() {
   return derivedUrl;
 }
 
+function resolveListenerHubBaseUrl() {
+  const configured = String(import.meta.env.VITE_LISTENER_HUB_BASE_URL || '').trim();
+  if (typeof window === 'undefined') {
+    return configured || 'http://127.0.0.1:3020';
+  }
+
+  const { protocol, hostname } = window.location;
+  const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1';
+  if (configured) {
+    return configured;
+  }
+  if (isLocalHost) {
+    return 'http://127.0.0.1:3020';
+  }
+  return `${protocol}//${hostname}:3020`;
+}
+
 const API_BASE_URL = resolveApiBaseUrl();
+const LISTENER_HUB_BASE_URL = resolveListenerHubBaseUrl();
 const DEFAULT_FOLDER = 'Workspace';
 const NAV_ITEMS = ['Scenarios', 'Catalogues', 'Management', 'Dashboards'];
 const DASHBOARD_TABS = [
@@ -65,6 +83,25 @@ const CATALOGUE_TABS = [
   { id: 'templates', label: 'Templates' },
   { id: 'endpoints', label: 'Endpoints' }
 ];
+
+const DEFAULT_LISTENER_FORM = {
+  original_listener_id: '',
+  listener_id: '',
+  name: '',
+  enabled: true,
+  brokers_csv: '',
+  topic: '',
+  group_id: '',
+  event_names_csv: '',
+  mapping_json:
+    '{\n  "event_id": "$.meta.id",\n  "customer_id": "$.user.customer_id",\n  "event_type": "$.event.name",\n  "ts": "$.event.ts",\n  "source": "mobile-app"\n}',
+  output_topic: 'event.raw',
+  output_key_field: 'customer_id',
+  retry_max_retries: 5,
+  retry_backoff_ms: 1000,
+  log_raw_payload: false,
+  log_normalized_event: false
+};
 
 function defaultLabelForKind(nodeKind) {
   if (nodeKind === 'trigger') return 'Trigger: cart_add';
@@ -160,6 +197,81 @@ function formatDurationMinutes(seconds) {
     return '0 dk';
   }
   return `${(n / 60).toFixed(1)} dk`;
+}
+
+function formatRelativeDuration(iso) {
+  if (!iso) return '-';
+  const started = new Date(iso).getTime();
+  if (Number.isNaN(started)) return '-';
+  const diffMs = Math.max(0, Date.now() - started);
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return 'Az once';
+  if (minutes < 60) return `${minutes} dk`;
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+  if (hours < 24) return restMinutes ? `${hours}s ${restMinutes}dk` : `${hours}s`;
+  const days = Math.floor(hours / 24);
+  const restHours = hours % 24;
+  return restHours ? `${days}g ${restHours}s` : `${days}g`;
+}
+
+const JOURNEY_STATE_LABELS = {
+  waiting_manual: 'Manuel Bekleme',
+  waiting: 'Zamanli Bekleme',
+  processing: 'Isleniyor',
+  completed: 'Tamamlandi',
+  failed: 'Basarisiz',
+  active: 'Aktif'
+};
+
+const JOURNEY_REASON_LABELS = {
+  manual_release: 'Manuel olarak bir sonraki adıma alındı',
+  due_claimed_for_processing: 'Bekleme süresi dolduğu için işleme alındı',
+  condition_true_action: 'Koşul sağlandı, aksiyon çalıştı',
+  condition_false_action: 'Koşul sağlanmadı, varsayılan aksiyon çalıştı',
+  trigger_event_new_manual_wait_instance: 'Tetikleyici event ile manuel bekleme kaydı açıldı',
+  trigger_event_replace_manual_wait: 'Aynı müşteri için manuel bekleme kaydı yenilendi',
+  trigger_event_new_instance: 'Tetikleyici event ile yeni akış başlatıldı',
+  trigger_event_replace_wait: 'Aynı müşteri için bekleme kaydı yenilendi',
+  action_failed: 'Aksiyon çalıştı ancak hata ile bitti',
+  http_timeout_action: 'HTTP çağrısı zaman aşımına uğradı',
+  http_error_action: 'HTTP çağrısı hata döndürdü'
+};
+
+function formatJourneyState(state) {
+  const key = String(state || '').trim();
+  if (!key) {
+    return '-';
+  }
+  return JOURNEY_STATE_LABELS[key] || key.replace(/_/g, ' ');
+}
+
+function formatJourneyReason(reason) {
+  const key = String(reason || '').trim();
+  if (!key) {
+    return '-';
+  }
+  return JOURNEY_REASON_LABELS[key] || key.replace(/_/g, ' ');
+}
+
+function transitionStateTone(state) {
+  const key = String(state || '').trim();
+  if (key === 'completed') return 'success';
+  if (key === 'failed') return 'danger';
+  if (key === 'processing') return 'warning';
+  if (key === 'waiting' || key === 'waiting_manual') return 'info';
+  return 'neutral';
+}
+
+function transitionReasonTone(reason) {
+  const key = String(reason || '').trim();
+  if (key === 'manual_release' || key === 'condition_true_action') return 'success';
+  if (key === 'action_failed' || key === 'http_timeout_action' || key === 'http_error_action') {
+    return 'danger';
+  }
+  if (key === 'due_claimed_for_processing') return 'warning';
+  if (key === 'condition_false_action') return 'info';
+  return 'neutral';
 }
 
 function parseCsvList(raw) {
@@ -336,10 +448,14 @@ function App() {
   const [journeyLogs, setJourneyLogs] = useState([]);
   const [journeyLogsLoading, setJourneyLogsLoading] = useState(false);
   const [journeyLogsWindowLabel, setJourneyLogsWindowLabel] = useState('Henuz yuklenmedi');
+  const [journeyLogSearch, setJourneyLogSearch] = useState('');
+  const [selectedJourneyLogId, setSelectedJourneyLogId] = useState('');
   const [manualQueueItems, setManualQueueItems] = useState([]);
   const [manualQueueLoading, setManualQueueLoading] = useState(false);
   const [manualReleaseCount, setManualReleaseCount] = useState(10);
   const [manualWaitNodeId, setManualWaitNodeId] = useState('');
+  const [manualQueueSearch, setManualQueueSearch] = useState('');
+  const [selectedManualQueueId, setSelectedManualQueueId] = useState('');
   const [dashboardKpi, setDashboardKpi] = useState(null);
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [dashboardJourneyPerf, setDashboardJourneyPerf] = useState({
@@ -362,6 +478,10 @@ function App() {
   const [globalPauseEnabled, setGlobalPauseEnabled] = useState(false);
   const [releaseControls, setReleaseControls] = useState([]);
   const [managementLoading, setManagementLoading] = useState(false);
+  const [listenerHubLoading, setListenerHubLoading] = useState(false);
+  const [listenerHubConfigs, setListenerHubConfigs] = useState([]);
+  const [listenerHubRuntimeItems, setListenerHubRuntimeItems] = useState([]);
+  const [listenerHubForm, setListenerHubForm] = useState(DEFAULT_LISTENER_FORM);
   const [cataloguesLoading, setCataloguesLoading] = useState(false);
   const [catalogueSummary, setCatalogueSummary] = useState(null);
   const [catalogueEventTypes, setCatalogueEventTypes] = useState([]);
@@ -454,6 +574,50 @@ function App() {
       }),
     [nodes]
   );
+  const currentNodeLabelMap = useMemo(
+    () =>
+      new Map(
+        nodes.map((node) => [
+          node.id,
+          String(normalizeNodeData(node.data, node.id).label || node.id)
+        ])
+      ),
+    [nodes]
+  );
+  const selectedJourneyLog = useMemo(
+    () => journeyLogs.find((item) => item.id === selectedJourneyLogId) || null,
+    [journeyLogs, selectedJourneyLogId]
+  );
+  const selectedManualQueueItem = useMemo(
+    () => manualQueueItems.find((item) => item.instance_id === selectedManualQueueId) || null,
+    [manualQueueItems, selectedManualQueueId]
+  );
+  const filteredJourneyLogs = useMemo(() => {
+    const query = String(journeyLogSearch || '').trim().toLowerCase();
+    if (!query) {
+      return journeyLogs;
+    }
+    return journeyLogs.filter((item) => {
+      const fromNodeLabel = currentNodeLabelMap.get(item.from_node) || '';
+      const toNodeLabel = currentNodeLabelMap.get(item.to_node) || '';
+      const haystack = [
+        item.customer_id,
+        item.from_node,
+        item.to_node,
+        item.from_state,
+        item.to_state,
+        item.reason,
+        fromNodeLabel,
+        toNodeLabel,
+        formatJourneyState(item.from_state),
+        formatJourneyState(item.to_state),
+        formatJourneyReason(item.reason)
+      ]
+        .map((value) => String(value || '').toLowerCase())
+        .join(' ');
+      return haystack.includes(query);
+    });
+  }, [currentNodeLabelMap, journeyLogSearch, journeyLogs]);
   const activeEventTypeOptions = useMemo(
     () =>
       catalogueEventTypes
@@ -506,6 +670,25 @@ function App() {
   const selectedBuilderColumnType = useMemo(() => {
     return String(selectedBuilderDatasetColumnTypes?.[exprBuilderColumn] || 'string');
   }, [exprBuilderColumn, selectedBuilderDatasetColumnTypes]);
+  const selectedManualWaitNodeLabel = useMemo(() => {
+    const matched = waitNodes.find((node) => node.id === manualWaitNodeId);
+    if (!matched) {
+      return manualWaitNodeId || '-';
+    }
+    return String(normalizeNodeData(matched.data, matched.id).label || matched.id);
+  }, [manualWaitNodeId, waitNodes]);
+  const filteredManualQueueItems = useMemo(() => {
+    const query = String(manualQueueSearch || '').trim().toLowerCase();
+    if (!query) {
+      return manualQueueItems;
+    }
+    return manualQueueItems.filter((item) =>
+      [item.customer_id, item.instance_id, item.state]
+        .map((value) => String(value || '').toLowerCase())
+        .join(' ')
+        .includes(query)
+    );
+  }, [manualQueueItems, manualQueueSearch]);
   const availableExprOperators = useMemo(() => {
     const t = selectedBuilderColumnType;
     if (t === 'number' || t === 'integer') {
@@ -1293,6 +1476,10 @@ function App() {
         return createdMs >= oneHourAgo;
       });
       setJourneyLogs(filtered);
+      setJourneyLogSearch('');
+      setSelectedJourneyLogId((current) =>
+        filtered.some((item) => item.id === current) ? current : String(filtered[0]?.id || '')
+      );
       setJourneyLogsWindowLabel('Son 1 saat');
     } catch (error) {
       setStatusText(`Journey log hatasi: ${error.message}`);
@@ -1321,9 +1508,14 @@ function App() {
         throw new Error(body.message || `Manual queue failed: ${response.status}`);
       }
       const body = await response.json();
-      setManualQueueItems(Array.isArray(body.items) ? body.items : []);
+      const nextItems = Array.isArray(body.items) ? body.items : [];
+      setManualQueueItems(nextItems);
+      setManualQueueSearch('');
+      setSelectedManualQueueId((current) =>
+        nextItems.some((item) => item.instance_id === current) ? current : String(nextItems[0]?.instance_id || '')
+      );
       setStatusText(
-        `Manual queue yuklendi: ${manualWaitNodeId} icin ${(body.items || []).length} kayit.`
+        `Manual queue yuklendi: ${manualWaitNodeId} icin ${nextItems.length} kayit.`
       );
     } catch (error) {
       setStatusText(`Manual queue hatasi: ${error.message}`);
@@ -1511,6 +1703,165 @@ function App() {
     },
     [fetchManagementData, releaseControls]
   );
+
+  const applyListenerConfigToForm = useCallback((item) => {
+    setListenerHubForm({
+      original_listener_id: item.listener_id || '',
+      listener_id: item.listener_id || '',
+      name: item.name || '',
+      enabled: Boolean(item.enabled),
+      brokers_csv: Array.isArray(item?.source?.brokers) ? item.source.brokers.join(', ') : '',
+      topic: item?.source?.topic || '',
+      group_id: item?.source?.group_id || '',
+      event_names_csv: Array.isArray(item?.filter?.event_names) ? item.filter.event_names.join(', ') : '',
+      mapping_json: JSON.stringify(item?.mapping?.fields || {}, null, 2),
+      output_topic: item?.output?.topic || 'event.raw',
+      output_key_field: item?.output?.key_field || 'customer_id',
+      retry_max_retries: Number(item?.retry?.max_retries || 5),
+      retry_backoff_ms: Number(item?.retry?.backoff_ms || 1000),
+      log_raw_payload: Boolean(item?.debug?.log_raw_payload),
+      log_normalized_event: Boolean(item?.debug?.log_normalized_event)
+    });
+  }, []);
+
+  const buildListenerConfigPayload = useCallback(() => {
+    const mappingParsed = parseJsonText(listenerHubForm.mapping_json || '{}');
+    if (!mappingParsed.ok) {
+      throw new Error(`mapping_json gecersiz: ${mappingParsed.message}`);
+    }
+    return {
+      listener_id: String(listenerHubForm.listener_id || '').trim(),
+      name: String(listenerHubForm.name || '').trim(),
+      enabled: Boolean(listenerHubForm.enabled),
+      source_type: 'kafka_topic',
+      source: {
+        ...(parseCsvList(listenerHubForm.brokers_csv || '').length
+          ? { brokers: parseCsvList(listenerHubForm.brokers_csv || '') }
+          : {}),
+        topic: String(listenerHubForm.topic || '').trim(),
+        group_id: String(listenerHubForm.group_id || '').trim()
+      },
+      filter: {
+        event_names: parseCsvList(listenerHubForm.event_names_csv || '')
+      },
+      debug: {
+        log_raw_payload: Boolean(listenerHubForm.log_raw_payload),
+        log_normalized_event: Boolean(listenerHubForm.log_normalized_event)
+      },
+      mapping: {
+        mode: 'declarative',
+        fields: mappingParsed.value
+      },
+      output: {
+        topic: String(listenerHubForm.output_topic || 'event.raw').trim(),
+        key_field: String(listenerHubForm.output_key_field || 'customer_id').trim()
+      },
+      retry: {
+        max_retries: Math.max(1, Number(listenerHubForm.retry_max_retries) || 1),
+        backoff_ms: Math.max(1, Number(listenerHubForm.retry_backoff_ms) || 1)
+      }
+    };
+  }, [listenerHubForm]);
+
+  const fetchListenerHubData = useCallback(async () => {
+    setListenerHubLoading(true);
+    try {
+      const [configsRes, runtimeRes] = await Promise.all([
+        fetch(`${LISTENER_HUB_BASE_URL}/admin/configs`),
+        fetch(`${LISTENER_HUB_BASE_URL}/listeners`)
+      ]);
+      if (!configsRes.ok) {
+        throw new Error(`Listener configs failed: ${configsRes.status}`);
+      }
+      if (!runtimeRes.ok) {
+        throw new Error(`Listener runtime failed: ${runtimeRes.status}`);
+      }
+      const [configsBody, runtimeBody] = await Promise.all([configsRes.json(), runtimeRes.json()]);
+      const configs = Array.isArray(configsBody.items) ? configsBody.items : [];
+      setListenerHubConfigs(configs);
+      setListenerHubRuntimeItems(Array.isArray(runtimeBody.items) ? runtimeBody.items : []);
+      if (!listenerHubForm.original_listener_id && configs.length > 0) {
+        applyListenerConfigToForm(configs[0]);
+      }
+    } catch (error) {
+      setStatusText(`Listener hub fetch hatasi: ${error.message}`);
+    } finally {
+      setListenerHubLoading(false);
+    }
+  }, [applyListenerConfigToForm, listenerHubForm.original_listener_id]);
+
+  const saveListenerHubConfig = useCallback(async () => {
+    try {
+      setListenerHubLoading(true);
+      const payload = buildListenerConfigPayload();
+      if (!payload.listener_id || !payload.name || !payload.source.topic || !payload.source.group_id) {
+        throw new Error('listener_id, name, topic ve group_id zorunlu.');
+      }
+      const isEdit = Boolean(listenerHubForm.original_listener_id);
+      const url = isEdit
+        ? `${LISTENER_HUB_BASE_URL}/admin/configs/${encodeURIComponent(listenerHubForm.original_listener_id)}`
+        : `${LISTENER_HUB_BASE_URL}/admin/configs`;
+      const response = await fetch(url, {
+        method: isEdit ? 'PUT' : 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body.message || `Listener config save failed: ${response.status}`);
+      }
+      applyListenerConfigToForm(body.item || payload);
+      await fetchListenerHubData();
+      setStatusText(`Listener config kaydedildi: ${payload.listener_id}`);
+    } catch (error) {
+      setStatusText(`Listener config kayit hatasi: ${error.message}`);
+    } finally {
+      setListenerHubLoading(false);
+    }
+  }, [applyListenerConfigToForm, buildListenerConfigPayload, fetchListenerHubData, listenerHubForm.original_listener_id]);
+
+  const deleteListenerHubConfig = useCallback(async () => {
+    const targetId = String(listenerHubForm.original_listener_id || listenerHubForm.listener_id || '').trim();
+    if (!targetId) {
+      setStatusText('Silmek icin bir listener sec.');
+      return;
+    }
+    try {
+      setListenerHubLoading(true);
+      const response = await fetch(
+        `${LISTENER_HUB_BASE_URL}/admin/configs/${encodeURIComponent(targetId)}`,
+        { method: 'DELETE' }
+      );
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body.message || `Listener config delete failed: ${response.status}`);
+      }
+      setListenerHubForm(DEFAULT_LISTENER_FORM);
+      await fetchListenerHubData();
+      setStatusText(`Listener silindi: ${targetId}`);
+    } catch (error) {
+      setStatusText(`Listener silme hatasi: ${error.message}`);
+    } finally {
+      setListenerHubLoading(false);
+    }
+  }, [fetchListenerHubData, listenerHubForm.listener_id, listenerHubForm.original_listener_id]);
+
+  const reloadListenerHubConfigs = useCallback(async () => {
+    try {
+      setListenerHubLoading(true);
+      const response = await fetch(`${LISTENER_HUB_BASE_URL}/admin/reload`, { method: 'POST' });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body.message || `Listener reload failed: ${response.status}`);
+      }
+      await fetchListenerHubData();
+      setStatusText(`Listener hub reload tamamlandi: ${body.listeners_total || 0} listener.`);
+    } catch (error) {
+      setStatusText(`Listener reload hatasi: ${error.message}`);
+    } finally {
+      setListenerHubLoading(false);
+    }
+  }, [fetchListenerHubData]);
 
   const fetchCatalogues = useCallback(async () => {
     setCataloguesLoading(true);
@@ -2154,6 +2505,13 @@ function App() {
   }, [activeMenu, fetchManagementData]);
 
   useEffect(() => {
+    if (activeMenu !== 'Kafka UI') {
+      return;
+    }
+    fetchListenerHubData();
+  }, [activeMenu, fetchListenerHubData]);
+
+  useEffect(() => {
     if (activeMenu !== 'Catalogues') {
       return;
     }
@@ -2778,6 +3136,9 @@ function App() {
             onEdgeClick={onEdgeClick}
             onPaneClick={onPaneClick}
             fitView
+            fitViewOptions={{ padding: 0.28, maxZoom: 0.8 }}
+            minZoom={0.35}
+            maxZoom={1.8}
           >
             <MiniMap
               nodeColor={minimapNodeColor}
@@ -3379,8 +3740,16 @@ function App() {
       {showJourneyLogs && (
       <section className="journeyLogsPanel">
         <div className="journeyLogsHead">
-          <h3>Journey Event Log</h3>
-          <span>{journeyId} v{version} | {journeyLogsWindowLabel}</span>
+          <div>
+            <h3>Journey Event Log</h3>
+            <span>{journeyId} v{version} | {journeyLogsWindowLabel}</span>
+          </div>
+          <input
+            className="journeyLogSearch"
+            value={journeyLogSearch}
+            onChange={(e) => setJourneyLogSearch(e.target.value)}
+            placeholder="Musteri no veya log ara..."
+          />
         </div>
         <div className="journeyLogsTableWrap">
           <table className="journeyLogsTable">
@@ -3388,30 +3757,74 @@ function App() {
               <tr>
                 <th>Musteri Numarasi</th>
                 <th>Log Tarihi</th>
-                <th>Onceki State</th>
-                <th>Mevcut State</th>
-                <th>Reason</th>
+                <th>Onceki Adim</th>
+                <th>Sonraki Adim</th>
+                <th>State Gecisi</th>
+                <th>Neden</th>
               </tr>
             </thead>
             <tbody>
               {journeyLogsLoading && (
                 <tr>
-                  <td colSpan={5}>Yukleniyor...</td>
+                  <td colSpan={6}>Yukleniyor...</td>
                 </tr>
               )}
-              {!journeyLogsLoading && journeyLogs.length === 0 && (
+              {!journeyLogsLoading && filteredJourneyLogs.length === 0 && (
                 <tr>
-                  <td colSpan={5}>Bu journey icin log bulunamadi.</td>
+                  <td colSpan={6}>
+                    {journeyLogs.length === 0
+                      ? 'Bu journey icin log bulunamadi.'
+                      : 'Aramaya uyan log bulunamadi.'}
+                  </td>
                 </tr>
               )}
               {!journeyLogsLoading &&
-                journeyLogs.map((item) => (
-                  <tr key={item.id}>
+                filteredJourneyLogs.map((item) => (
+                  <tr
+                    key={item.id}
+                    className={selectedJourneyLogId === item.id ? 'journeyLogRowActive' : ''}
+                    onClick={() => setSelectedJourneyLogId(item.id)}
+                  >
                     <td>{item.customer_id}</td>
                     <td>{formatLogDate(item.created_at)}</td>
-                    <td>{item.from_state || '-'}</td>
-                    <td>{item.to_state}</td>
-                    <td>{item.reason || '-'}</td>
+                    <td>
+                      <div className="journeyLogCellPrimary">
+                        {currentNodeLabelMap.get(item.from_node) || (item.from_node ? item.from_node : 'Baslangic')}
+                      </div>
+                      <div className="journeyLogCellMeta">
+                        {item.from_node || '-'}
+                      </div>
+                    </td>
+                    <td>
+                      <div className="journeyLogCellPrimary">
+                        {currentNodeLabelMap.get(item.to_node) || (item.to_node ? item.to_node : '-')}
+                      </div>
+                      <div className="journeyLogCellMeta">
+                        {item.to_node || '-'}
+                      </div>
+                    </td>
+                    <td>
+                      <div className="journeyLogCellPrimary journeyLogBadgeRow">
+                        <span className={`journeyLogBadge tone-${transitionStateTone(item.from_state)}`}>
+                          {formatJourneyState(item.from_state)}
+                        </span>
+                        <span className="journeyLogArrow">→</span>
+                        <span className={`journeyLogBadge tone-${transitionStateTone(item.to_state)}`}>
+                          {formatJourneyState(item.to_state)}
+                        </span>
+                      </div>
+                      <div className="journeyLogCellMeta">
+                        {`${item.from_state || '-'} -> ${item.to_state || '-'}`}
+                      </div>
+                    </td>
+                    <td>
+                      <div className="journeyLogCellPrimary">
+                        <span className={`journeyLogBadge tone-${transitionReasonTone(item.reason)}`}>
+                          {formatJourneyReason(item.reason)}
+                        </span>
+                      </div>
+                      <div className="journeyLogCellMeta">{item.reason || '-'}</div>
+                    </td>
                   </tr>
                 ))}
             </tbody>
@@ -3419,11 +3832,110 @@ function App() {
         </div>
       </section>
       )}
+      {selectedJourneyLog && (
+      <div className="journeyLogModalOverlay" onClick={() => setSelectedJourneyLogId('')}>
+        <div className="journeyLogModal" onClick={(e) => e.stopPropagation()}>
+          <div className="journeyLogModalHead">
+            <div className="journeyLogModalTitle">
+              <span className="journeyLogModalIcon">LOG</span>
+              <h3>Log Detayi</h3>
+              <span>{selectedJourneyLog.customer_id}</span>
+            </div>
+            <div className="journeyLogModalActions">
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(String(selectedJourneyLog.event_id || ''));
+                    setStatusText(`event_id kopyalandi: ${selectedJourneyLog.event_id || '-'}`);
+                  } catch (error) {
+                    setStatusText(`Kopyalama hatasi: ${error.message}`);
+                  }
+                }}
+              >
+                Event ID Kopyala
+              </button>
+              <button type="button" className="journeyLogModalClose" onClick={() => setSelectedJourneyLogId('')}>
+                Kapat
+              </button>
+            </div>
+          </div>
+          <div className="journeyLogDetailGrid">
+            <div className="journeyMetaCard">
+              <small>Akis</small>
+              <div className="journeyLogDetailFlow">
+                <span>{currentNodeLabelMap.get(selectedJourneyLog.from_node) || (selectedJourneyLog.from_node ? selectedJourneyLog.from_node : 'Baslangic')}</span>
+                <span className="journeyLogArrow">→</span>
+                <span>{currentNodeLabelMap.get(selectedJourneyLog.to_node) || (selectedJourneyLog.to_node ? selectedJourneyLog.to_node : '-')}</span>
+              </div>
+            </div>
+            <div className="journeyMetaCard">
+              <small>State</small>
+              <div className="journeyLogDetailFlow">
+                <span className={`journeyLogBadge tone-${transitionStateTone(selectedJourneyLog.from_state)}`}>
+                  {formatJourneyState(selectedJourneyLog.from_state)}
+                </span>
+                <span className="journeyLogArrow">→</span>
+                <span className={`journeyLogBadge tone-${transitionStateTone(selectedJourneyLog.to_state)}`}>
+                  {formatJourneyState(selectedJourneyLog.to_state)}
+                </span>
+              </div>
+            </div>
+            <div className="journeyMetaCard">
+              <small>Neden</small>
+              <div className="journeyLogDetailValue">{formatJourneyReason(selectedJourneyLog.reason)}</div>
+            </div>
+            <div className="journeyMetaCard">
+              <small>Zaman</small>
+              <div className="journeyLogDetailValue">{formatLogDate(selectedJourneyLog.created_at)}</div>
+            </div>
+            <div className="journeyMetaCard">
+              <small>Event ID</small>
+              <div className="journeyLogDetailValue journeyLogMono">{selectedJourneyLog.event_id || '-'}</div>
+            </div>
+            <div className="journeyMetaCard">
+              <small>Instance</small>
+              <div className="journeyLogDetailValue journeyLogMono">{selectedJourneyLog.instance_id || '-'}</div>
+            </div>
+          </div>
+          <div className="journeyLogTechBox">
+            <div><strong>from_node:</strong> {selectedJourneyLog.from_node || '-'}</div>
+            <div><strong>to_node:</strong> {selectedJourneyLog.to_node || '-'}</div>
+            <div><strong>from_state:</strong> {selectedJourneyLog.from_state || '-'}</div>
+            <div><strong>to_state:</strong> {selectedJourneyLog.to_state || '-'}</div>
+            <div><strong>reason:</strong> {selectedJourneyLog.reason || '-'}</div>
+            <div><strong>event_id:</strong> {selectedJourneyLog.event_id || '-'}</div>
+          </div>
+        </div>
+      </div>
+      )}
       {showManualQueue && (
       <section className="journeyLogsPanel">
         <div className="journeyLogsHead">
-          <h3>Manual Wait Queue</h3>
-          <span>{journeyId} v{version}</span>
+          <div>
+            <h3>Manual Wait Queue</h3>
+            <span>{journeyId} v{version} | {selectedManualWaitNodeLabel}</span>
+          </div>
+          <input
+            className="journeyLogSearch"
+            value={manualQueueSearch}
+            onChange={(e) => setManualQueueSearch(e.target.value)}
+            placeholder="Musteri no veya instance ara..."
+          />
+        </div>
+        <div className="manualQueueSummary">
+          <div className="journeyMetaCard">
+            <small>Kuyruktaki Kayit</small>
+            <div className="journeyLogDetailValue">{manualQueueItems.length}</div>
+          </div>
+          <div className="journeyMetaCard">
+            <small>Filtre Sonucu</small>
+            <div className="journeyLogDetailValue">{filteredManualQueueItems.length}</div>
+          </div>
+          <div className="journeyMetaCard">
+            <small>Secili Bekleme Adimi</small>
+            <div className="journeyLogDetailValue">{selectedManualWaitNodeLabel}</div>
+          </div>
         </div>
         <div className="manualQueueToolbar">
           <label>
@@ -3453,7 +3965,7 @@ function App() {
             onClick={fetchManualQueue}
             disabled={manualQueueLoading || !manualWaitNodeId}
           >
-            {manualQueueLoading ? 'Loading...' : 'Load Queue'}
+            {manualQueueLoading ? 'Yukleniyor...' : 'Kuyrugu Yukle'}
           </button>
           <button
             type="button"
@@ -3461,18 +3973,18 @@ function App() {
             onClick={releaseManualQueue}
             disabled={manualQueueLoading || !manualWaitNodeId}
           >
-            Release N
+            Ilk N Kaydi Serbest Birak
           </button>
         </div>
         <div className="journeyLogsTableWrap">
           <table className="journeyLogsTable">
             <thead>
               <tr>
-                <th>Instance</th>
                 <th>Musteri</th>
-                <th>State</th>
-                <th>Started At</th>
-                <th>Updated At</th>
+                <th>Bekleme Durumu</th>
+                <th>Kuyruga Giris</th>
+                <th>Bekleme Suresi</th>
+                <th>Instance</th>
               </tr>
             </thead>
             <tbody>
@@ -3481,25 +3993,101 @@ function App() {
                   <td colSpan={5}>Yukleniyor...</td>
                 </tr>
               )}
-              {!manualQueueLoading && manualQueueItems.length === 0 && (
+              {!manualQueueLoading && filteredManualQueueItems.length === 0 && (
                 <tr>
-                  <td colSpan={5}>Manual queue bos.</td>
+                  <td colSpan={5}>
+                    {manualQueueItems.length === 0 ? 'Manual queue bos.' : 'Aramaya uyan kayit bulunamadi.'}
+                  </td>
                 </tr>
               )}
               {!manualQueueLoading &&
-                manualQueueItems.map((item) => (
-                  <tr key={item.instance_id}>
-                    <td>{item.instance_id}</td>
+                filteredManualQueueItems.map((item) => (
+                  <tr
+                    key={item.instance_id}
+                    className={selectedManualQueueId === item.instance_id ? 'journeyLogRowActive' : ''}
+                    onClick={() => setSelectedManualQueueId(item.instance_id)}
+                  >
                     <td>{item.customer_id}</td>
-                    <td>{item.state}</td>
+                    <td>
+                      <span className={`journeyLogBadge tone-${transitionStateTone(item.state)}`}>
+                        {formatJourneyState(item.state)}
+                      </span>
+                    </td>
                     <td>{formatLogDate(item.started_at)}</td>
-                    <td>{formatLogDate(item.updated_at)}</td>
+                    <td>{formatRelativeDuration(item.started_at)}</td>
+                    <td>
+                      <div className="journeyLogCellPrimary journeyLogMono">{item.instance_id}</div>
+                      <div className="journeyLogCellMeta">{formatLogDate(item.updated_at)}</div>
+                    </td>
                   </tr>
                 ))}
             </tbody>
           </table>
         </div>
       </section>
+      )}
+      {selectedManualQueueItem && showManualQueue && (
+      <div className="journeyLogModalOverlay" onClick={() => setSelectedManualQueueId('')}>
+        <div className="journeyLogModal" onClick={(e) => e.stopPropagation()}>
+          <div className="journeyLogModalHead">
+            <div className="journeyLogModalTitle">
+              <span className="journeyLogModalIcon">WAIT</span>
+              <div>
+                <h3>Manual Queue Detayi</h3>
+                <span>{selectedManualQueueItem.customer_id}</span>
+              </div>
+            </div>
+            <div className="journeyLogModalActions">
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(String(selectedManualQueueItem.instance_id || ''));
+                    setStatusText(`instance_id kopyalandi: ${selectedManualQueueItem.instance_id || '-'}`);
+                  } catch (error) {
+                    setStatusText(`Kopyalama hatasi: ${error.message}`);
+                  }
+                }}
+              >
+                Instance ID Kopyala
+              </button>
+              <button type="button" className="journeyLogModalClose" onClick={() => setSelectedManualQueueId('')}>
+                Kapat
+              </button>
+            </div>
+          </div>
+          <div className="journeyLogDetailGrid">
+            <div className="journeyMetaCard">
+              <small>Bekleme Adimi</small>
+              <div className="journeyLogDetailValue">{selectedManualWaitNodeLabel}</div>
+            </div>
+            <div className="journeyMetaCard">
+              <small>Durum</small>
+              <div className="journeyLogDetailFlow">
+                <span className={`journeyLogBadge tone-${transitionStateTone(selectedManualQueueItem.state)}`}>
+                  {formatJourneyState(selectedManualQueueItem.state)}
+                </span>
+              </div>
+            </div>
+            <div className="journeyMetaCard">
+              <small>Kuyruga Giris</small>
+              <div className="journeyLogDetailValue">{formatLogDate(selectedManualQueueItem.started_at)}</div>
+            </div>
+            <div className="journeyMetaCard">
+              <small>Bekleme Suresi</small>
+              <div className="journeyLogDetailValue">{formatRelativeDuration(selectedManualQueueItem.started_at)}</div>
+            </div>
+            <div className="journeyMetaCard">
+              <small>Instance</small>
+              <div className="journeyLogDetailValue journeyLogMono">{selectedManualQueueItem.instance_id}</div>
+            </div>
+            <div className="journeyMetaCard">
+              <small>Son Guncelleme</small>
+              <div className="journeyLogDetailValue">{formatLogDate(selectedManualQueueItem.updated_at)}</div>
+            </div>
+          </div>
+        </div>
+      </div>
       )}
       </>
       )}
@@ -4476,6 +5064,219 @@ function App() {
                 )}
               </tbody>
             </table>
+          </section>
+
+        </main>
+      )}
+      {activeMenu === 'Kafka UI' && (
+        <main className="dashboardWorkspace dashboardWorkspaceHero">
+          <section className="dashboardHeader dashboardHero">
+            <div>
+              <h2>Kafka UI</h2>
+              <small>Listener tanimlari, broker ayarlari ve event mapping yonetimi</small>
+            </div>
+            <div className="designerActions">
+              <button type="button" onClick={fetchListenerHubData} disabled={listenerHubLoading}>
+                {listenerHubLoading ? 'Yukleniyor...' : 'Yenile'}
+              </button>
+              <button type="button" onClick={reloadListenerHubConfigs} disabled={listenerHubLoading}>
+                Reload
+              </button>
+              <button type="button" onClick={() => setListenerHubForm(DEFAULT_LISTENER_FORM)}>
+                Yeni Listener
+              </button>
+            </div>
+          </section>
+
+          <section className="dashboardTableWrap dashboardTableCard">
+            <div className="listenerHubGrid">
+              <div className="listenerHubList">
+                <table className="journeyLogsTable">
+                  <thead>
+                    <tr>
+                      <th>Listener</th>
+                      <th>Topic</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {listenerHubConfigs.map((item) => {
+                      const runtimeItem = listenerHubRuntimeItems.find(
+                        (row) => row.listener_id === item.listener_id
+                      );
+                      return (
+                        <tr
+                          key={item.listener_id}
+                          className={
+                            listenerHubForm.listener_id === item.listener_id ? 'listenerHubRowActive' : ''
+                          }
+                          onClick={() => applyListenerConfigToForm(item)}
+                        >
+                          <td>
+                            <strong>{item.name}</strong>
+                            <div className="listenerHubMeta">{item.listener_id}</div>
+                          </td>
+                          <td>{item?.source?.topic || '-'}</td>
+                          <td>{runtimeItem?.status || (item.enabled ? 'configured' : 'disabled')}</td>
+                        </tr>
+                      );
+                    })}
+                    {listenerHubConfigs.length === 0 && (
+                      <tr>
+                        <td colSpan={3}>Listener config bulunamadi.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="listenerHubEditor">
+                <div className="listenerHubFields">
+                  <label>
+                    Listener Id
+                    <input
+                      value={listenerHubForm.listener_id}
+                      onChange={(e) => setListenerHubForm((current) => ({ ...current, listener_id: e.target.value }))}
+                      placeholder="mobile-orders"
+                    />
+                  </label>
+                  <label>
+                    Name
+                    <input
+                      value={listenerHubForm.name}
+                      onChange={(e) => setListenerHubForm((current) => ({ ...current, name: e.target.value }))}
+                      placeholder="Mobile Orders"
+                    />
+                  </label>
+                  <label>
+                    Brokers
+                    <input
+                      value={listenerHubForm.brokers_csv}
+                      onChange={(e) => setListenerHubForm((current) => ({ ...current, brokers_csv: e.target.value }))}
+                      placeholder="10.10.10.20:9092, 10.10.10.21:9092"
+                    />
+                  </label>
+                  <label>
+                    Topic
+                    <input
+                      value={listenerHubForm.topic}
+                      onChange={(e) => setListenerHubForm((current) => ({ ...current, topic: e.target.value }))}
+                      placeholder="mobile.orders.raw"
+                    />
+                  </label>
+                  <label>
+                    Group Id
+                    <input
+                      value={listenerHubForm.group_id}
+                      onChange={(e) => setListenerHubForm((current) => ({ ...current, group_id: e.target.value }))}
+                      placeholder="listener-hub-mobile-orders-v1"
+                    />
+                  </label>
+                  <label>
+                    Event Names
+                    <input
+                      value={listenerHubForm.event_names_csv}
+                      onChange={(e) =>
+                        setListenerHubForm((current) => ({ ...current, event_names_csv: e.target.value }))
+                      }
+                      placeholder="order_created, order_updated"
+                    />
+                  </label>
+                  <label>
+                    Output Topic
+                    <input
+                      value={listenerHubForm.output_topic}
+                      onChange={(e) =>
+                        setListenerHubForm((current) => ({ ...current, output_topic: e.target.value }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Output Key Field
+                    <input
+                      value={listenerHubForm.output_key_field}
+                      onChange={(e) =>
+                        setListenerHubForm((current) => ({ ...current, output_key_field: e.target.value }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Max Retries
+                    <input
+                      type="number"
+                      min="1"
+                      value={listenerHubForm.retry_max_retries}
+                      onChange={(e) =>
+                        setListenerHubForm((current) => ({
+                          ...current,
+                          retry_max_retries: Number(e.target.value || 1)
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Backoff Ms
+                    <input
+                      type="number"
+                      min="1"
+                      value={listenerHubForm.retry_backoff_ms}
+                      onChange={(e) =>
+                        setListenerHubForm((current) => ({
+                          ...current,
+                          retry_backoff_ms: Number(e.target.value || 1000)
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="listenerHubCheck">
+                    <input
+                      type="checkbox"
+                      checked={listenerHubForm.enabled}
+                      onChange={(e) => setListenerHubForm((current) => ({ ...current, enabled: e.target.checked }))}
+                    />
+                    Enabled
+                  </label>
+                  <label className="listenerHubCheck">
+                    <input
+                      type="checkbox"
+                      checked={listenerHubForm.log_raw_payload}
+                      onChange={(e) =>
+                        setListenerHubForm((current) => ({ ...current, log_raw_payload: e.target.checked }))
+                      }
+                    />
+                    Raw payload logla
+                  </label>
+                  <label className="listenerHubCheck">
+                    <input
+                      type="checkbox"
+                      checked={listenerHubForm.log_normalized_event}
+                      onChange={(e) =>
+                        setListenerHubForm((current) => ({
+                          ...current,
+                          log_normalized_event: e.target.checked
+                        }))
+                      }
+                    />
+                    Normalized event logla
+                  </label>
+                  <label className="listenerHubTextarea">
+                    Mapping Fields JSON
+                    <textarea
+                      value={listenerHubForm.mapping_json}
+                      onChange={(e) => setListenerHubForm((current) => ({ ...current, mapping_json: e.target.value }))}
+                    />
+                  </label>
+                </div>
+                <div className="listenerHubToolbar">
+                  <button type="button" className="primary" onClick={saveListenerHubConfig} disabled={listenerHubLoading}>
+                    Kaydet
+                  </button>
+                  <button type="button" className="danger" onClick={deleteListenerHubConfig} disabled={listenerHubLoading}>
+                    Sil
+                  </button>
+                </div>
+              </div>
+            </div>
           </section>
         </main>
       )}

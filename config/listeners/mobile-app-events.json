@@ -1,0 +1,34 @@
+{
+  "listener_id": "mobile-app-events",
+  "name": "Mobile App Events",
+  "enabled": true,
+  "source_type": "kafka_topic",
+  "source": {
+    "brokers": ["127.0.0.1:9092"],
+    "topic": "mobile.raw.events",
+    "group_id": "listener-hub-mobile-v1"
+  },
+  "filter": {
+    "event_names": ["app_open", "purchase", "screen_view"]
+  },
+  "mapping": {
+    "mode": "declarative",
+    "fields": {
+      "event_id": "$.meta.id",
+      "customer_id": "$.user.customer_id",
+      "event_type": "$.event.name",
+      "ts": "$.event.ts",
+      "source": "mobile-app",
+      "payload.screen": "$.context.screen",
+      "payload.platform": "$.device.platform"
+    }
+  },
+  "output": {
+    "topic": "event.raw",
+    "key_field": "customer_id"
+  },
+  "retry": {
+    "max_retries": 5,
+    "backoff_ms": 1000
+  }
+}

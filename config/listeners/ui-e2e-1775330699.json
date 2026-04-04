@@ -1,0 +1,39 @@
+{
+  "listener_id": "ui-e2e-1775330699",
+  "name": "UI E2E Listener 1775330699",
+  "enabled": true,
+  "source_type": "kafka_topic",
+  "source": {
+    "brokers": [
+      "127.0.0.1:9092"
+    ],
+    "topic": "ui.e2e.raw.1775330699",
+    "group_id": "listener-hub-ui-e2e-1775330699"
+  },
+  "filter": {
+    "event_names": [
+      "purchase_completed"
+    ]
+  },
+  "debug": {},
+  "mapping": {
+    "mode": "declarative",
+    "fields": {
+      "event_id": "$.meta.id",
+      "customer_id": "$.customer.id",
+      "event_type": "ui_e2e_event_1775330699",
+      "ts": "$.occurred_at",
+      "source": "kafka-ui-e2e",
+      "payload.amount": "$.order.amount",
+      "payload.currency": "$.order.currency"
+    }
+  },
+  "output": {
+    "topic": "event.raw",
+    "key_field": "customer_id"
+  },
+  "retry": {
+    "max_retries": 5,
+    "backoff_ms": 1000
+  }
+}
