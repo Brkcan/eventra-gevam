@@ -1418,6 +1418,93 @@ function App() {
     viewMode
   ]);
 
+  const persistJourneyVersion = useCallback(
+    async (statusOverride = null, options = {}) => {
+      const finalStatus = statusOverride || journeyStatus;
+      const versionMode = options.versionMode || 'auto';
+      let targetVersion = Number(version);
+
+      for (const node of nodes) {
+        const data = normalizeNodeData(node.data, node.id);
+        if (data.node_kind === 'cache_lookup' && data.cache_on_miss === 'default') {
+          const defaultParsed = parseJsonText(data.cache_default_json || '{}');
+          if (!defaultParsed.ok) {
+            throw new Error(`Invalid cache_default_json on ${node.id}`);
+          }
+        }
+        if (data.node_kind !== 'http_call') {
+          continue;
+        }
+
+        const headersParsed = parseJsonText(data.http_headers_json || '{}');
+        if (!headersParsed.ok || typeof headersParsed.value !== 'object' || Array.isArray(headersParsed.value)) {
+          throw new Error(`Invalid http_headers_json on ${node.id}`);
+        }
+
+        const mappingParsed = parseJsonText(data.response_mapping_json || '{}');
+        if (!mappingParsed.ok || typeof mappingParsed.value !== 'object' || Array.isArray(mappingParsed.value)) {
+          throw new Error(`Invalid response_mapping_json on ${node.id}`);
+        }
+      }
+
+      const listParams = new URLSearchParams({
+        journey_id: journeyId,
+        limit: '500',
+        offset: '0'
+      });
+      const listResponse = await fetch(`${API_BASE_URL}/journeys?${listParams.toString()}`);
+      if (!listResponse.ok) {
+        throw new Error(`Journey list fetch failed: ${listResponse.status}`);
+      }
+      const listBody = await listResponse.json();
+      const items = listBody.items || [];
+      const exists = items.some((item) => item.journey_id === journeyId && Number(item.version) === targetVersion);
+
+      if (exists && versionMode === 'auto') {
+        const versions = items
+          .filter((item) => item.journey_id === journeyId)
+          .map((item) => Number(item.version))
+          .filter((v) => Number.isInteger(v) && v > 0);
+        const maxVersion = versions.length > 0 ? Math.max(...versions) : targetVersion;
+        targetVersion = maxVersion + 1;
+        setVersion(targetVersion);
+        setStatusText(`Ayni version v${version} vardi, otomatik v${targetVersion} olusturuluyor...`);
+      }
+
+      const payload = {
+        journey_id: journeyId,
+        version: targetVersion,
+        name,
+        status: finalStatus,
+        folder_path: selectedFolder || DEFAULT_FOLDER,
+        graph_json: graphJson
+      };
+
+      const response = await fetch(`${API_BASE_URL}/journeys`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        throw new Error(errBody.message || `Journey save failed: ${response.status}`);
+      }
+
+      setVersion(targetVersion);
+      setJourneyStatus(finalStatus);
+      setSelectedJourneyKey(`${journeyId}::${targetVersion}`);
+      await fetchJourneys();
+      await fetchFolders();
+
+      return {
+        version: targetVersion,
+        status: finalStatus
+      };
+    },
+    [fetchFolders, fetchJourneys, graphJson, journeyId, journeyStatus, name, nodes, selectedFolder, version]
+  );
+
   const resetCopilotSession = useCallback(() => {
     setCopilotPrompt('');
     setCopilotMessages([]);
@@ -1471,6 +1558,8 @@ function App() {
   const requestApproval = useCallback(async () => {
     try {
       setApprovalBusy(true);
+      setStatusText('Approval oncesi mevcut canvas kaydediliyor...');
+      const persisted = await persistJourneyVersion('draft', { versionMode: 'current' });
       const requestedBy = window.prompt('Request eden kullanici', 'ui') || 'ui';
       const note = window.prompt('Approval notu (opsiyonel)', '') || '';
       const response = await fetch(
@@ -1479,7 +1568,7 @@ function App() {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
-            version: Number(version),
+            version: Number(persisted.version),
             requested_by: requestedBy,
             note
           })
@@ -1491,14 +1580,14 @@ function App() {
       }
       setJourneyStatus('draft');
       await fetchJourneys();
-      await fetchApprovalInfo(journeyId, version);
-      setStatusText(`Approval istendi: ${journeyId} v${version}`);
+      await fetchApprovalInfo(journeyId, persisted.version);
+      setStatusText(`Approval istendi: ${journeyId} v${persisted.version}`);
     } catch (error) {
       setStatusText(`Approval request hatasi: ${error.message}`);
     } finally {
       setApprovalBusy(false);
     }
-  }, [fetchApprovalInfo, fetchJourneys, journeyId, version]);
+  }, [fetchApprovalInfo, fetchJourneys, journeyId, persistJourneyVersion]);
 
   const approveJourney = useCallback(async () => {
     try {
@@ -2205,87 +2294,15 @@ function App() {
     setStatusText('Journey kaydediliyor...');
 
     try {
-      const finalStatus = statusOverride || journeyStatus;
-      let targetVersion = Number(version);
-      for (const node of nodes) {
-        const data = normalizeNodeData(node.data, node.id);
-        if (data.node_kind === 'cache_lookup' && data.cache_on_miss === 'default') {
-          const defaultParsed = parseJsonText(data.cache_default_json || '{}');
-          if (!defaultParsed.ok) {
-            throw new Error(`Invalid cache_default_json on ${node.id}`);
-          }
-        }
-        if (data.node_kind !== 'http_call') {
-          continue;
-        }
-
-        const headersParsed = parseJsonText(data.http_headers_json || '{}');
-        if (!headersParsed.ok || typeof headersParsed.value !== 'object' || Array.isArray(headersParsed.value)) {
-          throw new Error(`Invalid http_headers_json on ${node.id}`);
-        }
-
-        const mappingParsed = parseJsonText(data.response_mapping_json || '{}');
-        if (!mappingParsed.ok || typeof mappingParsed.value !== 'object' || Array.isArray(mappingParsed.value)) {
-          throw new Error(`Invalid response_mapping_json on ${node.id}`);
-        }
-      }
-
-      const listParams = new URLSearchParams({
-        journey_id: journeyId,
-        limit: '500',
-        offset: '0'
-      });
-      const listResponse = await fetch(`${API_BASE_URL}/journeys?${listParams.toString()}`);
-      if (!listResponse.ok) {
-        throw new Error(`Journey list fetch failed: ${listResponse.status}`);
-      }
-      const listBody = await listResponse.json();
-      const exists = (listBody.items || []).some(
-        (item) => item.journey_id === journeyId && Number(item.version) === targetVersion
-      );
-
-      if (exists) {
-        const versions = (listBody.items || [])
-          .filter((item) => item.journey_id === journeyId)
-          .map((item) => Number(item.version))
-          .filter((v) => Number.isInteger(v) && v > 0);
-        const maxVersion = versions.length > 0 ? Math.max(...versions) : targetVersion;
-        targetVersion = maxVersion + 1;
-        setVersion(targetVersion);
-        setStatusText(`Ayni version v${version} vardi, otomatik v${targetVersion} olusturuluyor...`);
-      }
-
-      const payload = {
-        journey_id: journeyId,
-        version: targetVersion,
-        name,
-        status: finalStatus,
-        folder_path: selectedFolder || DEFAULT_FOLDER,
-        graph_json: graphJson
-      };
-
-      const response = await fetch(`${API_BASE_URL}/journeys`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        const errBody = await response.json().catch(() => ({}));
-        throw new Error(errBody.message || `Publish failed: ${response.status}`);
-      }
-
-      setJourneyStatus(finalStatus);
-      setStatusText(`Kayit tamamlandi: ${journeyId} v${targetVersion} [${finalStatus}]`);
-      await fetchJourneys();
-      await fetchFolders();
-      setSelectedJourneyKey(`${journeyId}::${targetVersion}`);
+      const versionMode = statusOverride === 'published' ? 'current' : 'auto';
+      const result = await persistJourneyVersion(statusOverride, { versionMode });
+      setStatusText(`Kayit tamamlandi: ${journeyId} v${result.version} [${result.status}]`);
     } catch (error) {
       setStatusText(`Kayit hatasi: ${error.message}`);
     } finally {
       setBusy(false);
     }
-  }, [fetchFolders, fetchJourneys, graphJson, journeyId, journeyStatus, name, nodes, selectedFolder, version]);
+  }, [journeyId, persistJourneyVersion]);
 
   const rollbackSelectedVersion = useCallback(async () => {
     if (!selectedJourneyItem) {
@@ -5591,8 +5608,53 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(
+class RootErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error, info) {
+    console.error('Eventra frontend render error:', error, info);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div
+          style={{
+            minHeight: '100vh',
+            padding: '24px',
+            background: '#fff7f5',
+            color: '#7a1f17',
+            fontFamily: 'monospace'
+          }}
+        >
+          <h1 style={{ marginTop: 0 }}>Frontend Runtime Error</h1>
+          <p>Uygulama render edilirken hata alindi. Detay asagida.</p>
+          <pre style={{ whiteSpace: 'pre-wrap' }}>{String(this.state.error?.stack || this.state.error?.message || this.state.error)}</pre>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+const rootElement = document.getElementById('root');
+
+if (!rootElement) {
+  throw new Error('root element not found');
+}
+
+ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
-    <App />
+    <RootErrorBoundary>
+      <App />
+    </RootErrorBoundary>
   </React.StrictMode>
 );
