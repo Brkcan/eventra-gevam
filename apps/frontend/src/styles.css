@@ -836,9 +836,9 @@ button:disabled {
   color: #1f3762;
   font-weight: 700;
   box-shadow: 0 14px 18px -16px rgba(16, 54, 114, 0.88);
-  min-width: 145px;
-  padding: 7px 9px;
-  font-size: 0.85rem;
+  min-width: 152px;
+  padding: 7px 10px;
+  font-size: 0.89rem;
 }
 
 .canvas .react-flow__node.selected,
@@ -945,6 +945,52 @@ button:disabled {
   gap: 10px;
 }
 
+.panelSection {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #d9e4f2;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(251, 253, 255, 0.94), rgba(243, 248, 255, 0.88));
+}
+
+.panelSectionTitle {
+  font-size: 13px;
+  font-weight: 800;
+  color: #234067;
+}
+
+.panelSectionHint {
+  margin-top: -2px;
+  color: #6f819f;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.inspectorHero {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid #d9e4f2;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(248, 251, 255, 0.94), rgba(240, 246, 255, 0.9));
+}
+
+.inspectorTypeChip {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid #b8cce9;
+  background: linear-gradient(180deg, #edf4ff, #ddeaff);
+  color: #24436f;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .panelHint {
   margin: 0;
   color: #7d6547;
@@ -979,6 +1025,182 @@ button:disabled {
 .expressionBuilderActions {
   display: flex;
   justify-content: flex-start;
+}
+
+.secondaryButton {
+  width: auto;
+  min-width: 0;
+  padding: 9px 14px;
+  border-radius: 12px;
+  border: 1px solid #bfd2ef;
+  background: linear-gradient(180deg, #ffffff, #eef5ff);
+  color: #234067;
+  font-weight: 700;
+  box-shadow: 0 10px 18px -16px rgba(24, 62, 121, 0.7);
+}
+
+.conditionStudioToggleRow {
+  display: grid;
+  gap: 8px;
+}
+
+.conditionStudio {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #d5e2f5;
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at top left, rgba(200, 225, 255, 0.24), transparent 36%),
+    linear-gradient(180deg, rgba(248, 251, 255, 0.96), rgba(239, 246, 255, 0.92));
+}
+
+.conditionStudioHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.conditionStudioHeader strong {
+  display: block;
+  color: #22416a;
+  font-size: 13px;
+}
+
+.conditionStudioHeader small {
+  display: block;
+  margin-top: 4px;
+  color: #6f819f;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.conditionStudioEditorLabel {
+  display: grid;
+  gap: 8px;
+}
+
+.conditionStudioEditor {
+  min-height: 140px;
+  resize: vertical;
+  font-family:
+    ui-monospace, SFMono-Regular, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono,
+    Courier New, monospace;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.conditionStudioBlock {
+  display: grid;
+  gap: 8px;
+}
+
+.conditionStudioBlockTitle {
+  color: #24436f;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.conditionSourceGroups {
+  display: grid;
+  gap: 10px;
+}
+
+.conditionSourceGroup {
+  display: grid;
+  gap: 6px;
+}
+
+.conditionSourceGroupTitle {
+  color: #577299;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.conditionTokenGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.conditionTokenChip {
+  width: auto;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid #c6d8f2;
+  background: linear-gradient(180deg, #fff, #f2f7ff);
+  color: #26456f;
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: 0 8px 16px -16px rgba(29, 73, 140, 0.65);
+}
+
+.conditionStudioSummary {
+  cursor: pointer;
+  background: linear-gradient(180deg, #ffffff, #f5f9ff);
+}
+
+.conditionStudioModal {
+  width: min(1120px, 100%);
+}
+
+.conditionStudioModalBody {
+  margin: 18px 20px 20px;
+}
+
+.conditionStudioCanvas {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) 120px minmax(0, 1.3fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.conditionStudioPane {
+  display: grid;
+  gap: 12px;
+}
+
+.conditionStudioPaneSources,
+.conditionStudioPaneEditor {
+  min-width: 0;
+}
+
+.conditionStudioPaneOperators {
+  align-self: stretch;
+}
+
+.conditionOperatorStack {
+  display: grid;
+  gap: 8px;
+}
+
+.conditionOperatorChip {
+  justify-content: center;
+  min-height: 40px;
+  font-size: 13px;
+}
+
+.conditionStudioInlineGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.conditionStudioGridWide {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1100px) {
+  .conditionStudioCanvas {
+    grid-template-columns: 1fr;
+  }
+
+  .conditionOperatorStack {
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  }
 }
 
 .fieldError {

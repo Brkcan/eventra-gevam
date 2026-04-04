@@ -215,6 +215,44 @@ function formatRelativeDuration(iso) {
   return restHours ? `${days}g ${restHours}s` : `${days}g`;
 }
 
+function getNodeKindTitle(nodeKind) {
+  if (nodeKind === 'trigger') return 'Tetikleyici';
+  if (nodeKind === 'wait') return 'Bekleme Adimi';
+  if (nodeKind === 'cache_lookup') return 'Cache Sorgusu';
+  if (nodeKind === 'http_call') return 'HTTP Cagrisi';
+  if (nodeKind === 'condition') return 'Kosul Kontrolu';
+  if (nodeKind === 'action') return 'Aksiyon';
+  return 'Node';
+}
+
+function getNodeKindHelp(nodeKind) {
+  if (nodeKind === 'trigger') return 'Journey hangi event ile baslayacak burada belirlenir.';
+  if (nodeKind === 'wait') return 'Akisin ne kadar bekleyecegi veya manuel onay gerekip gerekmedigi burada ayarlanir.';
+  if (nodeKind === 'cache_lookup') return 'Devam etmeden once cache tarafindan ek veri okunur.';
+  if (nodeKind === 'http_call') return 'Harici bir servise istek gonderip cevap journey icine alinabilir.';
+  if (nodeKind === 'condition') return 'Musteri veya event verisine gore akisin devam karari burada verilir.';
+  if (nodeKind === 'action') return 'Mesaj, push veya baska bir aksiyon bu adimda tetiklenir.';
+  return 'Bu node icin ayarlar burada duzenlenir.';
+}
+
+function getEdgeTypeTitle(edgeType) {
+  if (edgeType === 'always') return 'Her Zaman Gec';
+  if (edgeType === 'true') return 'Kosul Dogruysa';
+  if (edgeType === 'false') return 'Kosul Yanlissa';
+  if (edgeType === 'timeout') return 'Zaman Asimina Dusunce';
+  if (edgeType === 'error') return 'Hata Olusursa';
+  return 'Standart Gecis';
+}
+
+function getEdgeTypeHelp(edgeType) {
+  if (edgeType === 'always') return 'Bu baglanti, onceki adim tamamlaninca dogrudan calisir.';
+  if (edgeType === 'true') return 'Kosul sonucu olumluysa akisin gidecegi yonu belirler.';
+  if (edgeType === 'false') return 'Kosul sonucu olumsuzsa akisin gidecegi yonu belirler.';
+  if (edgeType === 'timeout') return 'Bekleme veya harici cagrida sure asimi olursa bu yone gecilir.';
+  if (edgeType === 'error') return 'Harici servis veya isleme hatasi olusursa bu yone gecilir.';
+  return 'Bu baglanti, iki adim arasindaki gecis kurallarini belirler.';
+}
+
 const JOURNEY_STATE_LABELS = {
   waiting_manual: 'Manuel Bekleme',
   waiting: 'Zamanli Bekleme',
@@ -549,6 +587,7 @@ function App() {
   const [exprBuilderOperator, setExprBuilderOperator] = useState('>=');
   const [exprBuilderValueType, setExprBuilderValueType] = useState('payload');
   const [exprBuilderValueInput, setExprBuilderValueInput] = useState('amount');
+  const [showEdgeConditionStudio, setShowEdgeConditionStudio] = useState(false);
   const [draggedJourneyKey, setDraggedJourneyKey] = useState('');
   const [activeDropFolder, setActiveDropFolder] = useState('');
   const draggedJourneyKeyRef = useRef('');
@@ -654,6 +693,10 @@ function App() {
     () => nodes.filter((node) => normalizeNodeData(node.data, node.id).node_kind === 'cache_lookup'),
     [nodes]
   );
+  const httpCallNodes = useMemo(
+    () => nodes.filter((node) => normalizeNodeData(node.data, node.id).node_kind === 'http_call'),
+    [nodes]
+  );
   const selectedBuilderDatasetColumns = useMemo(() => {
     const item = cacheDatasetMap.get(String(exprBuilderDatasetKey || ''));
     const cols = Array.isArray(item?.columns) ? item.columns : [];
@@ -670,6 +713,55 @@ function App() {
   const selectedBuilderColumnType = useMemo(() => {
     return String(selectedBuilderDatasetColumnTypes?.[exprBuilderColumn] || 'string');
   }, [exprBuilderColumn, selectedBuilderDatasetColumnTypes]);
+  const conditionSourceGroups = useMemo(() => {
+    const payloadItems = [
+      { label: 'Musteri No', path: 'payload.customer_id' },
+      { label: 'Event Tipi', path: 'payload.event_type' },
+      { label: 'Tutar', path: 'payload.amount' },
+      { label: 'Durum', path: 'payload.status' }
+    ];
+    const attributeItems = [
+      { label: 'Segment', path: 'attributes.segment' },
+      { label: 'Sehir', path: 'attributes.city' },
+      { label: 'Ulke', path: 'attributes.country' },
+      { label: 'Skor', path: 'attributes.score' }
+    ];
+
+    const cacheItems = cacheLookupNodes.flatMap((node) => {
+      const data = normalizeNodeData(node.data, node.id);
+      const label = String(data.label || node.id);
+      const dataset = cacheDatasetMap.get(String(data.cache_dataset_key || ''));
+      const columns = Array.isArray(dataset?.columns) ? dataset.columns.slice(0, 8) : [];
+      return columns.map((column) => ({
+        label: `${label} / ${column}`,
+        path: `${data.cache_target_path || 'external.cache.item'}.${column}`
+      }));
+    });
+
+    const httpItems = httpCallNodes.flatMap((node) => {
+      const data = normalizeNodeData(node.data, node.id);
+      const label = String(data.label || node.id);
+      const parsed = parseJsonText(data.response_mapping_json || '{}');
+      const mappedKeys = parsed.ok && parsed.value && typeof parsed.value === 'object'
+        ? Object.keys(parsed.value).slice(0, 8)
+        : [];
+      return [
+        { label: `${label} / HTTP Status`, path: 'external.http.response.status' },
+        { label: `${label} / Response Mesaji`, path: 'external.http.response.message' },
+        ...mappedKeys.map((key) => ({
+          label: `${label} / ${key}`,
+          path: `external.http.normalized.${key}`
+        }))
+      ];
+    });
+
+    return [
+      { title: 'Event Verisi', items: payloadItems },
+      { title: 'Musteri Verisi', items: attributeItems },
+      { title: 'Cache Sonuclari', items: cacheItems },
+      { title: 'HTTP Sonuclari', items: httpItems }
+    ].filter((group) => group.items.length > 0);
+  }, [cacheDatasetMap, cacheLookupNodes, httpCallNodes]);
   const selectedManualWaitNodeLabel = useMemo(() => {
     const matched = waitNodes.find((node) => node.id === manualWaitNodeId);
     if (!matched) {
@@ -909,6 +1001,28 @@ function App() {
       );
     },
     [selectedEdgeId, setEdges]
+  );
+
+  const appendToSelectedEdgeExpression = useCallback(
+    (fragment, mode = 'append') => {
+      if (!selectedEdge) {
+        return;
+      }
+      const nextFragment = String(fragment || '').trim();
+      if (!nextFragment) {
+        return;
+      }
+      const currentExpression = String(selectedEdge?.data?.expression || '').trim();
+      const nextExpression =
+        mode === 'replace'
+          ? nextFragment
+          : currentExpression
+            ? `${currentExpression} ${nextFragment}`.trim()
+            : nextFragment;
+      updateSelectedEdge({ expression: nextExpression });
+      setStatusText('Kosul ifadesi guncellendi.');
+    },
+    [selectedEdge, updateSelectedEdge]
   );
 
   const buildEdgeExpression = useCallback(() => {
@@ -2608,6 +2722,14 @@ function App() {
     }
   }, [exprBuilderColumn, exprBuilderValueInput, exprBuilderValueType, selectedEdgeId]);
 
+  useEffect(() => {
+    if (!selectedEdgeId) {
+      setShowEdgeConditionStudio(false);
+      return;
+    }
+    setShowEdgeConditionStudio(Boolean(String(selectedEdge?.data?.expression || '').trim()));
+  }, [selectedEdge?.data?.expression, selectedEdgeId]);
+
   const selectedData = selectedNode ? normalizeNodeData(selectedNode.data, selectedNode.id) : null;
   const headersValidation =
     selectedData?.node_kind === 'http_call'
@@ -3136,7 +3258,7 @@ function App() {
             onEdgeClick={onEdgeClick}
             onPaneClick={onPaneClick}
             fitView
-            fitViewOptions={{ padding: 0.28, maxZoom: 0.8 }}
+            fitViewOptions={{ padding: 0.18, maxZoom: 0.95 }}
             minZoom={0.35}
             maxZoom={1.8}
           >
@@ -3152,18 +3274,25 @@ function App() {
         </section>
         {showInspector && (
         <aside className="sidePanel">
-          <h2>Node Ayarlari</h2>
+          <h2>
+            {selectedData
+              ? getNodeKindTitle(selectedData.node_kind)
+              : selectedEdge
+                ? 'Baglanti Ayarlari'
+                : 'Node Ayarlari'}
+          </h2>
           {!selectedNode && !selectedEdge && <p className="panelHint">Akista bir node veya edge sec.</p>}
 
           {selectedNode && selectedData && (
             <div className="panelFields">
-              <label>
-                Node ID
-                <input value={selectedNode.id} readOnly />
-              </label>
+              <div className="inspectorHero">
+                <span className="inspectorTypeChip">{getNodeKindTitle(selectedData.node_kind)}</span>
+                <p className="panelHint">{getNodeKindHelp(selectedData.node_kind)}</p>
+                <small className="fieldHelp">Teknik ID: <code>{selectedNode.id}</code></small>
+              </div>
 
               <label>
-                Node Type
+                Adim Turu
                 <select
                   value={selectedData.node_kind}
                   onChange={(e) => {
@@ -3184,7 +3313,7 @@ function App() {
               </label>
 
               <label>
-                Label
+                Ekranda Gorunen Baslik
                 <input
                   value={selectedData.label}
                   onChange={(e) => updateSelectedNode({ label: e.target.value })}
@@ -3193,7 +3322,7 @@ function App() {
 
               {selectedData.node_kind === 'trigger' && (
                 <label>
-                  event_type
+                  Baslatan Event
                   <select
                     value={selectedData.event_type || ''}
                     onChange={(e) => updateSelectedNode({ event_type: e.target.value })}
@@ -3215,7 +3344,7 @@ function App() {
               {selectedData.node_kind === 'wait' && (
                 <>
                   <label>
-                    wait_minutes
+                    Bekleme Suresi (Dakika)
                     <input
                       type="number"
                       min="1"
@@ -3231,7 +3360,7 @@ function App() {
                       checked={Boolean(selectedData.manual_release)}
                       onChange={(e) => updateSelectedNode({ manual_release: e.target.checked })}
                     />
-                    manual_release (otomatik gecmesin)
+                    Otomatik ilerlemesin, manuel serbest birakilsin
                   </label>
                 </>
               )}
@@ -3239,7 +3368,7 @@ function App() {
               {selectedData.node_kind === 'http_call' && (
                 <>
                   <label>
-                    endpoint_id
+                    Hazir Endpoint
                     <select
                       value={selectedData.endpoint_id || ''}
                       onChange={(e) => {
@@ -3275,7 +3404,7 @@ function App() {
                     </select>
                   </label>
                   <label>
-                    http_method
+                    HTTP Method
                     <select
                       value={selectedData.http_method}
                       onChange={(e) => updateSelectedNode({ http_method: e.target.value })}
@@ -3288,7 +3417,7 @@ function App() {
                     </select>
                   </label>
                   <label>
-                    http_url
+                    URL
                     <input
                       placeholder="https://api.example.com/score"
                       value={selectedData.http_url}
@@ -3296,7 +3425,7 @@ function App() {
                     />
                   </label>
                   <label>
-                    http_headers_json
+                    Header Bilgileri
                     <textarea
                       value={selectedData.http_headers_json}
                       onChange={(e) => updateSelectedNode({ http_headers_json: e.target.value })}
@@ -3305,7 +3434,7 @@ function App() {
                       type="button"
                       onClick={() => prettifySelectedNodeJsonField('http_headers_json')}
                     >
-                      Prettify Headers JSON
+                      JSON Duzenle
                     </button>
                     {!headersValidation.ok && (
                       <small className="fieldError">JSON hatasi: {headersValidation.message}</small>
@@ -3315,14 +3444,14 @@ function App() {
                     )}
                   </label>
                   <label>
-                    http_body_template
+                    Gonderilecek Govde
                     <input
                       value={selectedData.http_body_template}
                       onChange={(e) => updateSelectedNode({ http_body_template: e.target.value })}
                     />
                   </label>
                   <label>
-                    http_timeout_ms
+                    Timeout (ms)
                     <input
                       type="number"
                       min="100"
@@ -3335,7 +3464,7 @@ function App() {
                     />
                   </label>
                   <label>
-                    response_mapping_json
+                    Cevap Esleme Kurali
                     <textarea
                       value={selectedData.response_mapping_json}
                       onChange={(e) =>
@@ -3346,7 +3475,7 @@ function App() {
                       type="button"
                       onClick={() => prettifySelectedNodeJsonField('response_mapping_json')}
                     >
-                      Prettify Mapping JSON
+                      JSON Duzenle
                     </button>
                     <small className="fieldHelp">
                       Ornek: <code>{'{"score":"response.score","risk.level":"response.risk.level"}'}</code>
@@ -3364,7 +3493,7 @@ function App() {
               {selectedData.node_kind === 'cache_lookup' && (
                 <>
                   <label>
-                    cache_dataset_key
+                    Cache Dataset
                     <select
                       value={selectedData.cache_dataset_key || ''}
                       onChange={(e) =>
@@ -3388,7 +3517,7 @@ function App() {
                     </select>
                   </label>
                   <label>
-                    cache_lookup_key_template
+                    Aranan Anahtar
                     <input
                       placeholder="{{payload.merchant_id}}"
                       value={selectedData.cache_lookup_key_template}
@@ -3398,7 +3527,7 @@ function App() {
                     />
                   </label>
                   <label>
-                    cache_target_path
+                    Sonucun Yazilacagi Alan
                     <input
                       placeholder="external.cache.item"
                       value={selectedData.cache_target_path}
@@ -3408,7 +3537,7 @@ function App() {
                     />
                   </label>
                   <label>
-                    cache_on_miss
+                    Kayit Bulunamazsa
                     <select
                       value={selectedData.cache_on_miss}
                       onChange={(e) => updateSelectedNode({ cache_on_miss: e.target.value })}
@@ -3420,7 +3549,7 @@ function App() {
                   </label>
                   {selectedData.cache_on_miss === 'default' && (
                     <label>
-                      cache_default_json
+                      Varsayilan Veri
                       <textarea
                         value={selectedData.cache_default_json}
                         onChange={(e) =>
@@ -3435,7 +3564,7 @@ function App() {
               {selectedData.node_kind === 'condition' && (
                 <>
                   <label>
-                    condition_key
+                    Kontrol Tipi
                     <select
                       value={selectedData.condition_key}
                       onChange={(e) => updateSelectedNode({ condition_key: e.target.value })}
@@ -3448,7 +3577,7 @@ function App() {
                   {(selectedData.condition_key === 'purchase_exists' ||
                     selectedData.condition_key === 'event_exists') && (
                     <label>
-                      condition_event_type
+                      Kontrol Edilen Event
                       <select
                         value={selectedData.condition_event_type || ''}
                         onChange={(e) =>
@@ -3472,7 +3601,7 @@ function App() {
                   )}
                   {selectedData.condition_key === 'segment_match' && (
                     <label>
-                      condition_segment_value
+                      Kontrol Edilen Segment
                       <select
                         value={selectedData.condition_segment_value || ''}
                         onChange={(e) =>
@@ -3504,7 +3633,7 @@ function App() {
               {selectedData.node_kind === 'action' && (
                 <>
                   <label>
-                    channel
+                    Kanal
                     <select
                       value={selectedData.channel}
                       onChange={(e) => updateSelectedNode({ channel: e.target.value })}
@@ -3516,7 +3645,7 @@ function App() {
                   </label>
 
                   <label>
-                    template_id
+                    Kullanilacak Template
                     <select
                       value={selectedData.template_id || ''}
                       onChange={(e) => {
@@ -3555,183 +3684,148 @@ function App() {
 
           {selectedEdge && (
             <div className="panelFields">
-              <label>
-                Edge ID
-                <input value={selectedEdge.id} readOnly />
-              </label>
-              <label>
-                edge_type
-                <select
-                  value={selectedEdge?.data?.edge_type || 'always'}
-                  onChange={(e) => updateSelectedEdge({ edge_type: e.target.value })}
-                >
-                  <option value="always">always</option>
-                  <option value="true">true</option>
-                  <option value="false">false</option>
-                  <option value="timeout">timeout</option>
-                  <option value="error">error</option>
-                </select>
-              </label>
-              <label>
-                priority
-                <input
-                  type="number"
-                  value={selectedEdge?.data?.priority ?? 100}
-                  onChange={(e) =>
-                    updateSelectedEdge({ priority: Math.max(0, Number(e.target.value) || 0) })
-                  }
-                />
-              </label>
-              <label>
-                delay_minutes
-                <input
-                  type="number"
-                  min="0"
-                  value={selectedEdge?.data?.delay_minutes ?? 0}
-                  onChange={(e) =>
-                    updateSelectedEdge({
-                      delay_minutes: Math.max(0, Number(e.target.value) || 0)
-                    })
-                  }
-                />
-              </label>
-              <label>
-                expression
-                <input
-                  placeholder="payload.amount > 1000"
-                  value={selectedEdge?.data?.expression || ''}
-                  onChange={(e) => updateSelectedEdge({ expression: e.target.value })}
-                />
-                <small className="fieldHelp">
-                  Ornek: <code>exists(payload.amount)</code>, <code>{'external.http.normalized.score >= 700'}</code>, <code>external.http.response.message contains "approved"</code>
-                </small>
-              </label>
-              <div className="expressionBuilder">
-                <div className="expressionBuilderHead">Expression Builder (Cache)</div>
-                {activeCacheDatasetOptions.length === 0 && (
-                  <small className="fieldHelp">
-                    Cache dataset bulunamadi. Once Catalogues &gt; Cache Loader ile dataset yukleyin.
-                  </small>
-                )}
-                {activeCacheDatasetOptions.length > 0 && (
-                  <>
-                    <label>
-                      dataset
-                      <select
-                        value={exprBuilderDatasetKey}
-                        onChange={(e) => setExprBuilderDatasetKey(e.target.value)}
-                      >
-                        <option value="">Sec...</option>
-                        {activeCacheDatasetOptions.map((datasetKey) => (
-                          <option key={datasetKey} value={datasetKey}>
-                            {datasetKey}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      column
-                      <select
-                        value={exprBuilderColumn}
-                        onChange={(e) => setExprBuilderColumn(e.target.value)}
-                      >
-                        <option value="">Sec...</option>
-                        {selectedBuilderDatasetColumns.map((column) => (
-                          <option key={column} value={column}>
-                            {column}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      operator
-                      <select
-                        value={exprBuilderOperator}
-                        onChange={(e) => setExprBuilderOperator(e.target.value)}
-                      >
-                        {availableExprOperators.map((op) => (
-                          <option key={op} value={op}>
-                            {op}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <small className="fieldHelp">
-                      Kolon tipi: <code>{selectedBuilderColumnType}</code>
-                    </small>
-                    <label>
-                      value_type
-                      <select
-                        value={exprBuilderValueType}
-                        onChange={(e) => setExprBuilderValueType(e.target.value)}
-                      >
-                        <option value="payload">payload</option>
-                        <option value="attributes">attributes</option>
-                        <option value="static">static</option>
-                      </select>
-                    </label>
-                    <label>
-                      {exprBuilderValueType === 'static' ? 'static_value' : `${exprBuilderValueType}_path`}
-                      <input
-                        placeholder={
-                          exprBuilderValueType === 'static'
-                            ? '1000 veya approved'
-                            : exprBuilderColumn || 'amount'
-                        }
-                        value={exprBuilderValueInput}
-                        onChange={(e) => setExprBuilderValueInput(e.target.value)}
-                      />
-                    </label>
-                    <div className="expressionBuilderActions">
-                      <button type="button" onClick={buildEdgeExpression}>
-                        Expression Olustur
-                      </button>
-                    </div>
-                    <small className="fieldHelp">
-                      Sol taraf otomatik: <code>{builderCacheTargetPath}.{exprBuilderColumn || 'column'}</code>
-                    </small>
-                  </>
-                )}
+              <div className="inspectorHero">
+                <span className="inspectorTypeChip">
+                  {getEdgeTypeTitle(selectedEdge?.data?.edge_type || 'always')}
+                </span>
+                <p className="panelHint">{getEdgeTypeHelp(selectedEdge?.data?.edge_type || 'always')}</p>
+                <small className="fieldHelp">Teknik ID: <code>{selectedEdge.id}</code></small>
               </div>
-              <label>
-                rate_limit_per_day
-                <input
-                  type="number"
-                  min="0"
-                  value={selectedEdge?.data?.rate_limit_per_day ?? 0}
-                  onChange={(e) =>
-                    updateSelectedEdge({
-                      rate_limit_per_day: Math.max(0, Number(e.target.value) || 0)
-                    })
-                  }
-                />
-              </label>
-              <label>
-                max_customers_total
-                <input
-                  type="number"
-                  min="0"
-                  value={selectedEdge?.data?.max_customers_total ?? 0}
-                  onChange={(e) =>
-                    updateSelectedEdge({
-                      max_customers_total: Math.max(0, Number(e.target.value) || 0)
-                    })
-                  }
-                />
-              </label>
-              <label>
-                max_customers_per_day
-                <input
-                  type="number"
-                  min="0"
-                  value={selectedEdge?.data?.max_customers_per_day ?? 0}
-                  onChange={(e) =>
-                    updateSelectedEdge({
-                      max_customers_per_day: Math.max(0, Number(e.target.value) || 0)
-                    })
-                  }
-                />
-              </label>
+
+              <div className="panelSection">
+                <div className="panelSectionTitle">Gecis Kurali</div>
+                <div className="panelSectionHint">
+                  Bu baglantinin ne zaman calisacagini ve hangi yone akacagini buradan belirlersin.
+                </div>
+
+                <label>
+                  Gecis Tipi
+                  <select
+                    value={selectedEdge?.data?.edge_type || 'always'}
+                    onChange={(e) => updateSelectedEdge({ edge_type: e.target.value })}
+                  >
+                    <option value="always">Her zaman gec</option>
+                    <option value="true">Kosul dogruysa</option>
+                    <option value="false">Kosul yanlissa</option>
+                    <option value="timeout">Zaman asimina dusunce</option>
+                    <option value="error">Hata olusursa</option>
+                  </select>
+                </label>
+
+                <label>
+                  Oncelik
+                  <input
+                    type="number"
+                    value={selectedEdge?.data?.priority ?? 100}
+                    onChange={(e) =>
+                      updateSelectedEdge({ priority: Math.max(0, Number(e.target.value) || 0) })
+                    }
+                  />
+                  <small className="fieldHelp">
+                    Ayni adimdan birden fazla cikis varsa dusuk sayi once calisir.
+                  </small>
+                </label>
+
+                <label>
+                  Ek Bekleme Suresi (Dakika)
+                  <input
+                    type="number"
+                    min="0"
+                    value={selectedEdge?.data?.delay_minutes ?? 0}
+                    onChange={(e) =>
+                      updateSelectedEdge({
+                        delay_minutes: Math.max(0, Number(e.target.value) || 0)
+                      })
+                    }
+                  />
+                  <small className="fieldHelp">
+                    Bu baglanti calismadan once ekstra bir gecikme vermek istersen kullan.
+                  </small>
+                </label>
+              </div>
+
+              <div className="panelSection">
+                <div className="panelSectionTitle">Kosul Tanimi</div>
+                <div className="panelSectionHint">
+                  Gecis sadece belirli veri kosullari saglandiginda calissin istiyorsan bu alani kullan.
+                </div>
+
+                <label>
+                  Mevcut Kosul
+                  <input
+                    className="conditionStudioSummary"
+                    placeholder="Henuz kosul tanimlanmadi"
+                    value={selectedEdge?.data?.expression || ''}
+                    readOnly
+                  />
+                  <small className="fieldHelp">
+                    Ornek: <code>exists(payload.amount)</code>, <code>{'external.http.normalized.score >= 700'}</code>, <code>external.http.response.message contains "approved"</code>
+                  </small>
+                </label>
+
+                <div className="conditionStudioToggleRow">
+                  <button
+                    type="button"
+                    className="secondaryButton"
+                    onClick={() => setShowEdgeConditionStudio((current) => !current)}
+                  >
+                    Kosul Tasarlayiciyi Ac
+                  </button>
+                  <small className="fieldHelp">
+                    If/Else akisi kurmak icin bir baglantiyi <code>Kosul dogruysa</code>, digerini <code>Kosul yanlissa</code> olarak ayarlayabilirsin.
+                  </small>
+                </div>
+              </div>
+
+              <div className="panelSection">
+                <div className="panelSectionTitle">Sinirlama ve Dagitim</div>
+                <div className="panelSectionHint">
+                  Bu gecisten gecerken kac kisiye ulasilacagini gunluk veya toplam bazda sinirlayabilirsin.
+                </div>
+
+                <label>
+                  Gunluk Gecis Limiti
+                  <input
+                    type="number"
+                    min="0"
+                    value={selectedEdge?.data?.rate_limit_per_day ?? 0}
+                    onChange={(e) =>
+                      updateSelectedEdge({
+                        rate_limit_per_day: Math.max(0, Number(e.target.value) || 0)
+                      })
+                    }
+                  />
+                  <small className="fieldHelp">
+                    0 degeri sinirsiz anlamina gelir.
+                  </small>
+                </label>
+                <label>
+                  Toplam Musteri Limiti
+                  <input
+                    type="number"
+                    min="0"
+                    value={selectedEdge?.data?.max_customers_total ?? 0}
+                    onChange={(e) =>
+                      updateSelectedEdge({
+                        max_customers_total: Math.max(0, Number(e.target.value) || 0)
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  Gunluk Musteri Limiti
+                  <input
+                    type="number"
+                    min="0"
+                    value={selectedEdge?.data?.max_customers_per_day ?? 0}
+                    onChange={(e) =>
+                      updateSelectedEdge({
+                        max_customers_per_day: Math.max(0, Number(e.target.value) || 0)
+                      })
+                    }
+                  />
+                </label>
+              </div>
             </div>
           )}
         </aside>
@@ -4084,6 +4178,217 @@ function App() {
             <div className="journeyMetaCard">
               <small>Son Guncelleme</small>
               <div className="journeyLogDetailValue">{formatLogDate(selectedManualQueueItem.updated_at)}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      )}
+      {selectedEdge && showEdgeConditionStudio && (
+      <div className="journeyLogModalOverlay" onClick={() => setShowEdgeConditionStudio(false)}>
+        <div className="journeyLogModal conditionStudioModal" onClick={(e) => e.stopPropagation()}>
+          <div className="journeyLogModalHead">
+            <div className="journeyLogModalTitle">
+              <span className="journeyLogModalIcon">IF</span>
+              <div>
+                <h3>Kosul Tasarlayici</h3>
+                <span>{getEdgeTypeTitle(selectedEdge?.data?.edge_type || 'always')}</span>
+              </div>
+            </div>
+            <div className="journeyLogModalActions">
+              <button type="button" className="journeyLogModalClose" onClick={() => setShowEdgeConditionStudio(false)}>
+                Kapat
+              </button>
+            </div>
+          </div>
+
+          <div className="conditionStudio conditionStudioModalBody">
+            <div className="conditionStudioHeader">
+              <div>
+                <strong>Gecis Kosulunu Tasarla</strong>
+                <small>
+                  Payload, musteri verisi, cache sonucu ve HTTP response alanlarini bir araya getirerek daha uzun kosullar yazabilirsin.
+                </small>
+              </div>
+            </div>
+
+            <div className="conditionStudioCanvas">
+              <div className="conditionStudioPane conditionStudioPaneSources">
+                <div className="conditionStudioBlock">
+                  <div className="conditionStudioBlockTitle">Kaynak Alanlar</div>
+                  <div className="conditionSourceGroups">
+                    {conditionSourceGroups.map((group) => (
+                      <div key={group.title} className="conditionSourceGroup">
+                        <div className="conditionSourceGroupTitle">{group.title}</div>
+                        <div className="conditionTokenGrid">
+                          {group.items.map((item) => (
+                            <button
+                              key={`${group.title}-${item.path}`}
+                              type="button"
+                              className="conditionTokenChip"
+                              onClick={() => appendToSelectedEdgeExpression(item.path)}
+                              title={item.path}
+                            >
+                              {item.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="conditionStudioPane conditionStudioPaneOperators">
+                <div className="conditionStudioBlock">
+                  <div className="conditionStudioBlockTitle">Hizli Operatorler</div>
+                  <div className="conditionOperatorStack">
+                    <button type="button" className="conditionTokenChip conditionOperatorChip" onClick={() => appendToSelectedEdgeExpression(' and ')}>
+                      AND
+                    </button>
+                    <button type="button" className="conditionTokenChip conditionOperatorChip" onClick={() => appendToSelectedEdgeExpression(' or ')}>
+                      OR
+                    </button>
+                    <button type="button" className="conditionTokenChip conditionOperatorChip" onClick={() => appendToSelectedEdgeExpression(' == ')}>
+                      =
+                    </button>
+                    <button type="button" className="conditionTokenChip conditionOperatorChip" onClick={() => appendToSelectedEdgeExpression(' > ')}>
+                      &gt;
+                    </button>
+                    <button type="button" className="conditionTokenChip conditionOperatorChip" onClick={() => appendToSelectedEdgeExpression(' contains ')}>
+                      contains
+                    </button>
+                    <button type="button" className="conditionTokenChip conditionOperatorChip" onClick={() => appendToSelectedEdgeExpression('(')}>
+                      (
+                    </button>
+                    <button type="button" className="conditionTokenChip conditionOperatorChip" onClick={() => appendToSelectedEdgeExpression(')')}>
+                      )
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="conditionStudioPane conditionStudioPaneEditor">
+                <label className="conditionStudioEditorLabel">
+                  Expression Editoru
+                  <textarea
+                    className="conditionStudioEditor"
+                    rows={10}
+                    placeholder='Ornek: external.http.normalized.score >= 700 and attributes.segment == "vip"'
+                    value={selectedEdge?.data?.expression || ''}
+                    onChange={(e) => updateSelectedEdge({ expression: e.target.value })}
+                  />
+                </label>
+
+                <div className="conditionStudioBlock">
+                  <div className="conditionStudioBlockTitle">Hazir Kosul Kaliplari</div>
+                  <div className="conditionTokenGrid">
+                    <button type="button" className="conditionTokenChip" onClick={() => appendToSelectedEdgeExpression('exists(payload.amount)', 'replace')}>
+                      Alan var mi?
+                    </button>
+                    <button type="button" className="conditionTokenChip" onClick={() => appendToSelectedEdgeExpression('attributes.segment == \"vip\"', 'replace')}>
+                      VIP musteri
+                    </button>
+                    <button type="button" className="conditionTokenChip" onClick={() => appendToSelectedEdgeExpression('external.http.response.status == 200', 'replace')}>
+                      HTTP 200 kontrolu
+                    </button>
+                    <button type="button" className="conditionTokenChip" onClick={() => appendToSelectedEdgeExpression('external.http.response.message contains \"approved\"', 'replace')}>
+                      Onay mesaji kontrolu
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="expressionBuilder">
+              <div className="expressionBuilderHead">Cache ile Kosul Olustur</div>
+              {activeCacheDatasetOptions.length === 0 && (
+                <small className="fieldHelp">
+                  Cache dataset bulunamadi. Once Catalogues &gt; Cache Loader ile dataset yukleyin.
+                </small>
+              )}
+              {activeCacheDatasetOptions.length > 0 && (
+                <>
+                  <div className="conditionStudioInlineGrid">
+                    <label>
+                      Dataset
+                      <select
+                        value={exprBuilderDatasetKey}
+                        onChange={(e) => setExprBuilderDatasetKey(e.target.value)}
+                      >
+                        <option value="">Sec...</option>
+                        {activeCacheDatasetOptions.map((datasetKey) => (
+                          <option key={datasetKey} value={datasetKey}>
+                            {datasetKey}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Alan
+                      <select
+                        value={exprBuilderColumn}
+                        onChange={(e) => setExprBuilderColumn(e.target.value)}
+                      >
+                        <option value="">Sec...</option>
+                        {selectedBuilderDatasetColumns.map((column) => (
+                          <option key={column} value={column}>
+                            {column}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Karsilastirma
+                      <select
+                        value={exprBuilderOperator}
+                        onChange={(e) => setExprBuilderOperator(e.target.value)}
+                      >
+                        {availableExprOperators.map((op) => (
+                          <option key={op} value={op}>
+                            {op}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Deger Kaynagi
+                      <select
+                        value={exprBuilderValueType}
+                        onChange={(e) => setExprBuilderValueType(e.target.value)}
+                      >
+                        <option value="payload">Event payload</option>
+                        <option value="attributes">Musteri attribute</option>
+                        <option value="static">Sabit deger</option>
+                      </select>
+                    </label>
+                    <label className="conditionStudioGridWide">
+                      {exprBuilderValueType === 'static'
+                        ? 'Sabit Deger'
+                        : `${exprBuilderValueType === 'payload' ? 'Payload' : 'Attribute'} Alani`}
+                      <input
+                        placeholder={
+                          exprBuilderValueType === 'static'
+                            ? '1000 veya approved'
+                            : exprBuilderColumn || 'amount'
+                        }
+                        value={exprBuilderValueInput}
+                        onChange={(e) => setExprBuilderValueInput(e.target.value)}
+                      />
+                    </label>
+                  </div>
+                  <small className="fieldHelp">
+                    Alan tipi: <code>{selectedBuilderColumnType}</code>
+                  </small>
+                  <div className="expressionBuilderActions">
+                    <button type="button" onClick={buildEdgeExpression}>
+                      Kosulu Doldur
+                    </button>
+                  </div>
+                  <small className="fieldHelp">
+                    Sol taraf otomatik: <code>{builderCacheTargetPath}.{exprBuilderColumn || 'column'}</code>
+                  </small>
+                </>
+              )}
             </div>
           </div>
         </div>
