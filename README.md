@@ -17,6 +17,8 @@ Not:
 
 Fonksiyonel analiz dokumani:
 - [docs/FUNCTIONAL_ANALYSIS.md](docs/FUNCTIONAL_ANALYSIS.md)
+- Listener hub mimarisi:
+  - [docs/LISTENER_HUB_ARCHITECTURE.md](docs/LISTENER_HUB_ARCHITECTURE.md)
 
 ## Local Baslatma
 
@@ -90,6 +92,8 @@ ORACLE_CONNECT_STRING=127.0.0.1:1521/FREEPDB1 \
 npm run dev:api
 npm run dev:rule-engine
 npm run dev:cache-loader
+npm run dev:listener-hub
+npm run dev:kafka-ui
 npm run dev:frontend
 ```
 
@@ -98,6 +102,8 @@ Beklenen local adresler:
 - API: `http://localhost:3001`
 - Rule engine health: `http://localhost:3002/health`
 - Cache loader: `http://localhost:3010`
+- Listener hub health: `http://localhost:3020/health`
+- Kafka UI: `http://127.0.0.1:5174`
 
 Saglik kontrolleri:
 
@@ -105,6 +111,13 @@ Saglik kontrolleri:
 curl http://localhost:3001/health
 curl http://localhost:3002/health
 curl http://localhost:3010/health
+curl http://localhost:3020/health
+```
+
+Listener hub smoke test:
+
+```bash
+npm run smoke:listener-hub
 ```
 
 ## Local Docker Infra
@@ -123,7 +136,55 @@ Uygulama servisleri yine lokal process olarak calisir:
 - `npm run dev:api`
 - `npm run dev:rule-engine`
 - `npm run dev:cache-loader`
+- `npm run dev:listener-hub`
+- `npm run dev:kafka-ui`
 - `npm run dev:frontend`
+
+## Listener Hub
+
+`services/listener-hub`, config-first event adapter servisidir. Ayrı source'lardan gelen ham veriyi Eventra'nin bekledigi normalize event formatina cevirip Kafka `event.raw` topic'ine yazar.
+
+Ana dosyalar:
+- global config: [config/listener-hub.json](config/listener-hub.json)
+- listener config dizini: [config/listeners](config/listeners)
+- mimari dokuman: [docs/LISTENER_HUB_ARCHITECTURE.md](docs/LISTENER_HUB_ARCHITECTURE.md)
+
+Lokal calistirma:
+
+```bash
+npm run dev:listener-hub
+```
+
+Kontroller:
+
+```bash
+curl http://127.0.0.1:3020/health
+curl http://127.0.0.1:3020/listeners
+```
+
+Gercek smoke test:
+
+```bash
+npm run smoke:listener-hub
+```
+
+Kafka listener config'lerini yonetmek icin ayri UI:
+
+```bash
+npm run dev:kafka-ui
+```
+
+Adres:
+
+```bash
+http://127.0.0.1:5174
+```
+
+Temel ozellikler:
+- listener config listeleme / duzenleme / silme
+- runtime status ve son hata goruntuleme
+- sample payload ile normalize preview
+- topic'ten sample mesaj bekleyip mapping preview yapma
 
 ## Unix Deployment (Container'siz)
 

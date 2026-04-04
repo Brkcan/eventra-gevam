@@ -1,0 +1,30 @@
+{
+  "listener_id": "mobile-orders",
+  "name": "Mobile Orders",
+  "enabled": true,
+  "source_type": "kafka_topic",
+  "source": {
+    "brokers": ["10.10.10.20:9092"],
+    "topic": "mobile.orders.raw",
+    "group_id": "listener-hub-mobile-orders-v1"
+  },
+  "filter": {
+    "event_names": ["order_created"]
+  },
+  "mapping": {
+    "mode": "declarative",
+    "fields": {
+      "event_id": "$.id",
+      "customer_id": "$.customer.id",
+      "event_type": "mobile_order_created",
+      "ts": "$.created_at",
+      "payload.amount": "$.amount",
+      "payload.currency": "$.currency",
+      "source": "mobile-orders"
+    }
+  },
+  "output": {
+    "topic": "event.raw",
+    "key_field": "customer_id"
+  }
+}

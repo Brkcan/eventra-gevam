@@ -1,0 +1,12 @@
+{
+  "kafka": {
+    "brokers": ["127.0.0.1:9092"],
+    "target_topic": "event.raw"
+  },
+  "runtime": {
+    "reload_on_change": false,
+    "default_max_retries": 5,
+    "health_port": 3020,
+    "config_dir": "config/listeners"
+  }
+}
