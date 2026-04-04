@@ -15,6 +15,9 @@ Not:
 - Oracle hedefli kalici veri katmani
 - React Flow journey designer (`apps/frontend`)
 
+Fonksiyonel analiz dokumani:
+- [docs/FUNCTIONAL_ANALYSIS.md](docs/FUNCTIONAL_ANALYSIS.md)
+
 ## Local Baslatma
 
 Local test icin Docker kullanabilirsin. Sunucu tarafi icin hedef hala container'siz `systemd` kurulumdur.
@@ -126,6 +129,7 @@ Uygulama servisleri yine lokal process olarak calisir:
 
 Docker/Podman kullanmadan klasik Unix sunucuda ayri servisler olarak calistirmak icin hazir iskelet:
 
+- hizli ilk kurulum akisi: [infra/unix/README.md#sunucuda-ilk-kurulum](infra/unix/README.md#sunucuda-ilk-kurulum)
 - dokuman: [infra/unix/README.md](infra/unix/README.md)
 - Oracle gecis plani: [infra/unix/ORACLE_MIGRATION.md](infra/unix/ORACLE_MIGRATION.md)
 - Oracle schema: [infra/unix/oracle-schema.sql](infra/unix/oracle-schema.sql)
