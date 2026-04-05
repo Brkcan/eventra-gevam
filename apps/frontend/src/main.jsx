@@ -21,6 +21,8 @@ function resolveApiBaseUrl() {
 
   const { protocol, hostname } = window.location;
   const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1';
+  const isRelativePath = (value) => value.startsWith('/');
+  const normalizeBase = (value) => value.replace(/\/+$/, '');
   const derivedHost = hostname.startsWith('www.') ? `api.${hostname.slice(4)}` : `api.${hostname}`;
   const derivedUrl = `${protocol}//${derivedHost}`;
   const hasUsableHost = (value) => {
@@ -33,20 +35,23 @@ function resolveApiBaseUrl() {
   };
 
   if (configured) {
+    if (isRelativePath(configured)) {
+      return normalizeBase(configured);
+    }
     if (!hasUsableHost(configured)) {
-      return isLocalHost ? 'http://localhost:3001' : derivedUrl;
+      return isLocalHost ? 'http://localhost:3001' : '/api';
     }
     if (configured.includes('localhost') && !isLocalHost) {
-      return `https://${derivedHost}`;
+      return '/api';
     }
-    return configured;
+    return normalizeBase(configured);
   }
 
   if (isLocalHost) {
     return 'http://localhost:3001';
   }
 
-  return derivedUrl;
+  return '/api';
 }
 
 function resolveListenerHubBaseUrl() {
@@ -57,7 +62,11 @@ function resolveListenerHubBaseUrl() {
 
   const { protocol, hostname } = window.location;
   const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1';
+  const isRelativePath = (value) => value.startsWith('/');
   if (configured) {
+    if (isRelativePath(configured)) {
+      return configured.replace(/\/+$/, '');
+    }
     return configured;
   }
   if (isLocalHost) {
