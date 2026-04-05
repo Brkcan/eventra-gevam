@@ -10,13 +10,20 @@ function resolveListenerHubBaseUrl() {
 
   const { protocol, hostname } = window.location;
   const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1';
+  const isRelativePath = (value) => value.startsWith('/');
   if (configured) {
-    return configured;
+    if (isRelativePath(configured)) {
+      return configured.replace(/\/+$/, '');
+    }
+    if (configured.includes('localhost') && !isLocalHost) {
+      return '/api';
+    }
+    return configured.replace(/\/+$/, '');
   }
   if (isLocalHost) {
     return 'http://127.0.0.1:3020';
   }
-  return `${protocol}//${hostname}:3020`;
+  return '/api';
 }
 
 const LISTENER_HUB_BASE_URL = resolveListenerHubBaseUrl();
@@ -714,8 +721,34 @@ function App() {
   );
 }
 
+class RootErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: '24px', fontFamily: 'system-ui, sans-serif' }}>
+          <h1 style={{ marginBottom: '12px' }}>Listener UI Runtime Error</h1>
+          <p style={{ marginBottom: '8px' }}>Uygulama render edilirken hata alindi.</p>
+          <pre style={{ whiteSpace: 'pre-wrap' }}>{String(this.state.error?.message || this.state.error)}</pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <App />
+    <RootErrorBoundary>
+      <App />
+    </RootErrorBoundary>
   </React.StrictMode>
 );
