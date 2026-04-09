@@ -5,7 +5,9 @@ import {
   Background,
   BackgroundVariant,
   Controls,
+  Handle,
   MiniMap,
+  Position,
   ReactFlow,
   useEdgesState,
   useNodesState
@@ -153,8 +155,6 @@ function defaultLabelForKind(nodeKind) {
 }
 
 function flowTypeForKind(nodeKind) {
-  if (nodeKind === 'trigger') return 'input';
-  if (nodeKind === 'action') return 'output';
   return undefined;
 }
 
@@ -272,6 +272,72 @@ function getNodeKindHelp(nodeKind) {
   if (nodeKind === 'condition') return 'Musteri veya event verisine gore akisin devam karari burada verilir.';
   if (nodeKind === 'action') return 'Mesaj, push veya baska bir aksiyon bu adimda tetiklenir.';
   return 'Bu node icin ayarlar burada duzenlenir.';
+}
+
+function getNodeKindIcon(nodeKind) {
+  if (nodeKind === 'trigger') return '⚡';
+  if (nodeKind === 'wait') return '⌛';
+  if (nodeKind === 'cache_lookup') return '◈';
+  if (nodeKind === 'http_call') return '↗';
+  if (nodeKind === 'condition') return '◇';
+  if (nodeKind === 'action') return '◉';
+  return '•';
+}
+
+function getNodePrimaryLabel(label, nodeKind) {
+  const raw = String(label || '').trim();
+  if (!raw) {
+    return defaultLabelForKind(nodeKind);
+  }
+  const split = raw.split(':');
+  if (split.length < 2) {
+    return raw;
+  }
+  const prefix = String(split[0] || '')
+    .trim()
+    .toLowerCase();
+  const knownPrefixes = ['trigger', 'wait', 'cache lookup', 'http call', 'condition', 'action'];
+  if (!knownPrefixes.includes(prefix)) {
+    return raw;
+  }
+  return split.slice(1).join(':').trim() || raw;
+}
+
+function JourneyNodeCard({ id, data, isConnectable }) {
+  const normalized = normalizeNodeData(data, id);
+  const kind = normalized.node_kind;
+  const kindTitle = getNodeKindTitle(kind).toLocaleUpperCase('tr-TR');
+  const primaryLabel = getNodePrimaryLabel(normalized.label, kind);
+  const hasTargetHandle = true;
+  const hasSourceHandle = true;
+
+  return (
+    <>
+      {hasTargetHandle && (
+        <Handle
+          id="in"
+          type="target"
+          position={Position.Top}
+          isConnectable={isConnectable}
+        />
+      )}
+      <div className={`flowNodeCard flowNodeCard-${kind}`}>
+        <div className="flowNodeMeta">
+          <span className="flowNodeIcon" aria-hidden="true">{getNodeKindIcon(kind)}</span>
+          <span>{kindTitle}</span>
+        </div>
+        <div className="flowNodeTitle">{primaryLabel}</div>
+      </div>
+      {hasSourceHandle && (
+        <Handle
+          id="out"
+          type="source"
+          position={Position.Bottom}
+          isConnectable={isConnectable}
+        />
+      )}
+    </>
+  );
 }
 
 function getEdgeTypeTitle(edgeType) {
@@ -2796,6 +2862,14 @@ function App() {
   }, [selectedEdge?.data?.expression, selectedEdgeId]);
 
   const selectedData = selectedNode ? normalizeNodeData(selectedNode.data, selectedNode.id) : null;
+  const nodeTypes = useMemo(
+    () => ({
+      default: JourneyNodeCard,
+      input: JourneyNodeCard,
+      output: JourneyNodeCard
+    }),
+    []
+  );
   const headersValidation =
     selectedData?.node_kind === 'http_call'
       ? parseJsonText(selectedData.http_headers_json || '{}')
@@ -3325,6 +3399,7 @@ function App() {
           <ReactFlow
             nodes={nodes}
             edges={edges}
+            nodeTypes={nodeTypes}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
@@ -3343,7 +3418,7 @@ function App() {
               zoomable
             />
             <Controls />
-            <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color="#d3ddf1" />
+            <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color="#1a2a4a" />
           </ReactFlow>
         </section>
         {showInspector && (

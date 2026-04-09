@@ -763,15 +763,16 @@ button:disabled {
   min-width: 0;
   position: relative;
   padding: 0;
-  border: 1px solid var(--line);
+  border: 1px solid #1f2f4d;
   border-radius: var(--radius);
   overflow: hidden;
   background:
-    radial-gradient(circle at 10% 0%, rgba(255, 230, 198, 0.46), transparent 50%),
-    linear-gradient(160deg, rgba(255, 252, 246, 0.96), rgba(252, 245, 231, 0.94));
+    radial-gradient(circle at 80% -10%, rgba(47, 101, 188, 0.24), transparent 45%),
+    radial-gradient(circle at -5% 110%, rgba(34, 211, 238, 0.11), transparent 38%),
+    linear-gradient(180deg, #020817, #030d22);
   box-shadow:
-    0 20px 30px -28px rgba(76, 40, 12, 0.5),
-    0 2px 0 rgba(255, 255, 255, 0.7) inset;
+    0 24px 34px -30px rgba(2, 8, 23, 0.95),
+    0 1px 0 rgba(75, 110, 166, 0.28) inset;
 }
 
 .canvasTools {
@@ -830,86 +831,147 @@ button:disabled {
 }
 
 .canvas .react-flow__node {
-  border-radius: 12px;
-  border: 1px solid #c8d8f0;
-  background: linear-gradient(165deg, #ffffff, #eef4ff);
-  color: #1f3762;
-  font-weight: 700;
-  box-shadow: 0 14px 18px -16px rgba(16, 54, 114, 0.88);
-  min-width: 152px;
-  padding: 7px 10px;
-  font-size: 0.89rem;
+  --node-accent: #f6b024;
+  border-radius: 18px;
+  border: 1px solid #3a4f75;
+  background: linear-gradient(180deg, #0f1d3a, #0e1a34);
+  color: #e8f0fd;
+  box-shadow: 0 14px 28px -22px rgba(3, 9, 24, 0.95);
+  min-width: 196px;
+  min-height: 78px;
+  padding: 0;
+  overflow: visible;
+  transition: box-shadow 0.16s ease, border-color 0.16s ease;
+  font-family: "JetBrains Mono", "Fira Code", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  will-change: transform;
+}
+
+.canvas .react-flow__node::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: -1px;
+  bottom: -1px;
+  width: 5px;
+  border-top-left-radius: 18px;
+  border-bottom-left-radius: 18px;
+  background: var(--node-accent);
 }
 
 .canvas .react-flow__node.selected,
 .canvas .react-flow__node:focus {
-  border-color: #4e83da;
+  border-color: var(--node-accent);
   box-shadow:
-    0 0 0 4px rgba(78, 131, 218, 0.18),
-    0 14px 18px -16px rgba(16, 54, 114, 0.88);
+    0 0 0 3px color-mix(in srgb, var(--node-accent) 32%, transparent),
+    0 0 22px color-mix(in srgb, var(--node-accent) 35%, transparent),
+    0 14px 28px -22px rgba(3, 9, 24, 0.95);
+}
+
+.canvas .react-flow__node.dragging {
+  transition: none;
+  box-shadow: 0 10px 22px -18px rgba(3, 9, 24, 0.92);
 }
 
 .canvas .react-flow__handle {
-  width: 8px;
-  height: 8px;
-  border: 1px solid #e7effc;
-  background: #4a7dd4;
+  width: 11px;
+  height: 11px;
+  border: 2px solid #3d4f73;
+  background: #09172f;
+  box-shadow: none;
 }
 
 .canvas .react-flow__edge-path {
-  stroke: #5d84ca;
+  stroke: #485b7d;
   stroke-width: 2.3;
 }
 
 .canvas .react-flow__edge.selected .react-flow__edge-path {
-  stroke: #ef6f4b;
+  stroke: #86a3d8;
 }
 
 .canvas .react-flow__edge .react-flow__edge-path {
-  stroke-dasharray: 5 4;
+  stroke-dasharray: none;
 }
 
 .canvas .react-flow__node.node-trigger {
-  border-color: #9ec4ff;
-  background: linear-gradient(165deg, #f5f9ff, #e7f0ff);
+  --node-accent: #f6b024;
 }
 
 .canvas .react-flow__node.node-wait {
-  border-color: #86ded5;
-  background: linear-gradient(165deg, #f3fffd, #ddf9f5);
+  --node-accent: #4c88ff;
 }
 
 .canvas .react-flow__node.node-cache_lookup {
-  border-color: #c8b0ff;
-  background: linear-gradient(165deg, #faf7ff, #eee6ff);
+  --node-accent: #8e6bf5;
 }
 
 .canvas .react-flow__node.node-http_call {
-  border-color: #f3c67f;
-  background: linear-gradient(165deg, #fffaf2, #ffefd8);
+  --node-accent: #f6b024;
 }
 
 .canvas .react-flow__node.node-condition {
-  border-color: #ffb5ab;
-  background: linear-gradient(165deg, #fff7f6, #ffe9e6);
+  --node-accent: #f1677f;
 }
 
 .canvas .react-flow__node.node-action {
-  border-color: #96e1b0;
-  background: linear-gradient(165deg, #f4fff8, #e1f9ea);
+  --node-accent: #20c8a2;
+}
+
+.canvas .react-flow__node .react-flow__handle-top {
+  border-color: #364869;
+  background: #162743;
+}
+
+.canvas .react-flow__node .react-flow__handle-bottom {
+  border-color: var(--node-accent);
+  background: color-mix(in srgb, var(--node-accent) 20%, #162743);
+}
+
+.flowNodeCard {
+  padding: 9px 11px 9px 16px;
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  min-height: 78px;
+}
+
+.flowNodeMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--node-accent);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.flowNodeIcon {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.flowNodeTitle {
+  color: #eaf0fb;
+  font-size: 11px;
+  line-height: 1.15;
+  font-family: "Sora", "Avenir Next", "Segoe UI", sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.005em;
 }
 
 .canvas .react-flow__controls,
 .canvas .react-flow__minimap {
-  border: 1px solid #bfd2ef;
+  border: 1px solid #31466b;
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 14px 24px -22px rgba(15, 53, 115, 0.85);
-  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 12px 26px -18px rgba(2, 10, 22, 0.95);
+  background: rgba(7, 15, 30, 0.92);
 }
 
 .canvas .react-flow__minimap {
-  background: linear-gradient(180deg, rgba(232, 241, 255, 0.95), rgba(223, 236, 255, 0.9));
+  background: linear-gradient(180deg, rgba(7, 15, 30, 0.97), rgba(12, 25, 49, 0.93));
 }
 
 .canvas .react-flow__minimap .react-flow__minimap-node {
@@ -918,9 +980,9 @@ button:disabled {
 }
 
 .canvas .react-flow__controls button {
-  background: linear-gradient(180deg, #ffffff, #eaf2ff);
-  border-bottom: 1px solid #d5e2f5;
-  color: #2e4e86;
+  background: linear-gradient(180deg, #0d1e38, #132846);
+  border-bottom: 1px solid #2d456c;
+  color: #aec2e4;
 }
 
 .sidePanel {
