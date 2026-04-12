@@ -1,0 +1,11 @@
+{
+  "name": "@eventra/java-plugin-runner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Java plugin runner service for journey action plugins",
+  "scripts": {
+    "build": "mvn -q -DskipTests package",
+    "start": "java -jar target/java-plugin-runner-0.1.0.jar"
+  }
+}
+

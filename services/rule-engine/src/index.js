@@ -20,6 +20,13 @@ const smtpUser = process.env.SMTP_USER || '';
 const smtpPass = process.env.SMTP_PASS || '';
 const smtpFrom = process.env.SMTP_FROM || 'Eventra <no-reply@eventra.local>';
 const emailDryRun = String(process.env.EMAIL_DRY_RUN || 'true').toLowerCase() === 'true';
+const javaPluginRunnerUrl = String(
+  process.env.JAVA_PLUGIN_RUNNER_URL || 'http://127.0.0.1:3030'
+).replace(/\/+$/, '');
+const javaPluginRunnerTimeoutMs = Math.max(
+  500,
+  Number(process.env.JAVA_PLUGIN_RUNNER_TIMEOUT_MS || 5000)
+);
 
 console.info(
   `[bootstrap] rule-engine primary database vendor=${primaryDb.vendor} target=${describeDatabaseTarget(
@@ -619,6 +626,67 @@ async function executeHttpCall(httpConfig, instance, customerAttributes = {}) {
   }
 }
 
+async function executeJavaPluginAction({
+  pluginActionId,
+  actionConfig,
+  triggerPayload,
+  instance,
+  journey,
+  context
+}) {
+  const pluginId = String(pluginActionId || '').trim();
+  if (!pluginId) {
+    return {
+      ok: false,
+      status: 'failed',
+      reason: 'plugin_action_id_missing',
+      result: null
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), javaPluginRunnerTimeoutMs);
+  try {
+    const response = await fetch(`${javaPluginRunnerUrl}/plugins/execute`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        plugin_id: pluginId,
+        action_config: actionConfig || {},
+        event: triggerPayload || {},
+        journey: {
+          journey_id: journey?.journey_id || '',
+          version: journey?.version || 1
+        },
+        instance: {
+          instance_id: instance?.instance_id || '',
+          customer_id: instance?.customer_id || '',
+          current_node: instance?.current_node || ''
+        },
+        context: context || {}
+      })
+    });
+    const body = await response.json().catch(() => ({}));
+    const success = Boolean(response.ok && body?.success !== false);
+    return {
+      ok: success,
+      status: success ? 'triggered' : 'failed',
+      reason: success ? String(body.message || 'plugin_ok') : String(body.message || `plugin_http_${response.status}`),
+      result: body
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 'failed',
+      reason: error?.name === 'AbortError' ? 'plugin_timeout' : `plugin_error:${error.message}`,
+      result: null
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function isRateLimited(route, journey, customerId) {
   const limit = Number(route?.rate_limit_per_day || 0);
   if (!Number.isFinite(limit) || limit <= 0 || !route?.edge_id) {
@@ -974,7 +1042,8 @@ function normalizeJourneyDefinition(row) {
           {
             channel: node?.data?.channel || node?.channel || 'email',
             template_id: node?.data?.template_id || '',
-            message: node?.data?.label || 'Journey action triggered.'
+            message: node?.data?.label || 'Journey action triggered.',
+            plugin_action_id: String(node?.data?.plugin_action_id || '').trim()
           }
         ])
     )
@@ -1224,11 +1293,16 @@ async function evaluateDueJourney(journey) {
         [instance.customer_id]
       );
       const triggerPayload = normalizeJsonField(triggerEventResult.rows[0]?.payload, {});
+      const instanceContext = normalizeJsonField(instance.context_json, {});
       const expressionContext = {
         payload: triggerPayload,
         attributes: normalizeJsonField(profileResult.rows[0]?.attributes, {}),
+        context: instanceContext,
         external: {}
       };
+      if (instanceContext?.java_plugin) {
+        expressionContext.external.java_plugin = instanceContext.java_plugin;
+      }
       const customerAttributes = expressionContext.attributes || {};
       let cacheMiss = false;
       if (journey.cache_lookup?.dataset_key) {
@@ -1493,6 +1567,22 @@ async function evaluateDueJourney(journey) {
           });
           action.status = sendResult.status;
           action.delivery_reason = sendResult.reason;
+        } else if (action.channel === 'java_plugin') {
+          const pluginResult = await executeJavaPluginAction({
+            pluginActionId: config.plugin_action_id,
+            actionConfig: {},
+            triggerPayload,
+            instance,
+            journey,
+            context: {
+              condition_matched: conditionMatched,
+              http_result: httpResult || null
+            }
+          });
+          action.status = pluginResult.status;
+          action.delivery_reason = pluginResult.reason;
+          action.plugin_action_id = config.plugin_action_id || '';
+          action.plugin_output = pluginResult?.result?.output || null;
         }
 
         await pgClient.query(
@@ -1561,6 +1651,12 @@ async function evaluateDueJourney(journey) {
               reason: httpResult.reason,
               status: httpResult.status,
               ok: httpResult.ok
+            }
+          : null,
+        java_plugin: finalAction?.plugin_output
+          ? {
+              plugin_action_id: finalAction.plugin_action_id || null,
+              output: finalAction.plugin_output
             }
           : null,
         exit_reason:

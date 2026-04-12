@@ -95,6 +95,8 @@ npm run dev:cache-loader
 npm run dev:listener-hub
 npm run dev:kafka-ui
 npm run dev:frontend
+npm run build:java-plugin-runner
+npm run start:java-plugin-runner
 ```
 
 Beklenen local adresler:
@@ -103,6 +105,7 @@ Beklenen local adresler:
 - Rule engine health: `http://localhost:3002/health`
 - Cache loader: `http://localhost:3010`
 - Listener hub health: `http://localhost:3020/health`
+- Java plugin runner: `http://localhost:3030/health`
 - Kafka UI: `http://127.0.0.1:5174`
 
 Saglik kontrolleri:
@@ -112,6 +115,7 @@ curl http://localhost:3001/health
 curl http://localhost:3002/health
 curl http://localhost:3010/health
 curl http://localhost:3020/health
+curl http://localhost:3030/health
 ```
 
 Listener hub smoke test:
@@ -185,6 +189,29 @@ Temel ozellikler:
 - runtime status ve son hata goruntuleme
 - sample payload ile normalize preview
 - topic'ten sample mesaj bekleyip mapping preview yapma
+
+## Java Plugin Runner
+
+`services/java-plugin-runner`, journey action adimlarinda `java_plugin` kanalini calistirir.
+
+Temel akış:
+- Java tarafinda `JourneyActionPlugin` interface'ini implemente eden siniflari bir JAR icine paketle.
+- JAR dosyasini plugin klasorune koy.
+- Runner servis `GET /plugins/actions` ile plugin listesini expose eder.
+- Journey designer action node'unda `channel=java_plugin` secilip plugin secilir.
+- Rule engine action aninda `POST /plugins/execute` ile secili plugin'i cagirir.
+
+Paket mimarisi referansi:
+- [services/java-plugin-runner/ACTION_PACKAGE_ARCHITECTURE.md](services/java-plugin-runner/ACTION_PACKAGE_ARCHITECTURE.md)
+
+Ortam degiskenleri:
+- `JAVA_PLUGIN_RUNNER_URL` (api + rule-engine icin, varsayilan `http://127.0.0.1:3030`)
+- `JAVA_PLUGIN_RUNNER_TIMEOUT_MS` (rule-engine execute timeout, varsayilan `5000`)
+- `JAVA_PLUGIN_RUNNER_PORT` (runner icin, varsayilan `3030`)
+- `JAVA_PLUGIN_DIR` (runner plugin klasoru, varsayilan `plugins`)
+- `CONTACT_POLICY_URL` (`ContactPolicyAction` icin POST endpoint)
+- `CONTACT_POLICY_TIMEOUT_MS` (`ContactPolicyAction` timeout, varsayilan `5000`)
+- `CONTACT_POLICY_BEARER_TOKEN` (`ContactPolicyAction` opsiyonel Bearer token)
 
 ## Unix Deployment (Container'siz)
 

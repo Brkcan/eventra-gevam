@@ -16,6 +16,9 @@ const kafkaBrokers = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
 const kafkaClientId = process.env.KAFKA_CLIENT_ID || 'eventra-api';
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 const primaryDb = resolvePrimaryDatabaseConfig();
+const javaPluginRunnerUrl = String(
+  process.env.JAVA_PLUGIN_RUNNER_URL || 'http://127.0.0.1:3030'
+).replace(/\/+$/, '');
 
 console.info(
   `[bootstrap] api primary database vendor=${primaryDb.vendor} target=${describeDatabaseTarget(
@@ -220,6 +223,18 @@ function parseJsonSafe(raw, fallback = null) {
     return JSON.parse(String(raw ?? ''));
   } catch {
     return fallback;
+  }
+}
+
+async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 5000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    const body = await response.json().catch(() => ({}));
+    return { response, body };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -775,6 +790,28 @@ app.get('/health', async (_req, res) => {
     res.status(200).json({ status: 'ok' });
   } catch (error) {
     res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
+app.get('/plugin-actions', async (_req, res) => {
+  try {
+    const { response, body } = await fetchJsonWithTimeout(
+      `${javaPluginRunnerUrl}/plugins/actions`,
+      {},
+      4500
+    );
+    if (!response.ok) {
+      throw new Error(body.message || `plugin runner status ${response.status}`);
+    }
+    res.status(200).json({
+      status: 'ok',
+      items: Array.isArray(body.items) ? body.items : []
+    });
+  } catch (error) {
+    res.status(502).json({
+      status: 'error',
+      message: `plugin runner unavailable: ${error.message}`
+    });
   }
 });
 
