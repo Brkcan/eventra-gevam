@@ -19,6 +19,8 @@
     "start:api": "npm --workspace @eventra/api run start",
     "start:rule-engine": "npm --workspace @eventra/rule-engine run start",
     "start:listener-hub": "npm --workspace @eventra/listener-hub run start",
+    "start:java-plugin-runner": "npm --workspace @eventra/java-plugin-runner run start",
+    "build:java-plugin-runner": "npm --workspace @eventra/java-plugin-runner run build",
     "smoke:listener-hub": "npm --workspace @eventra/listener-hub run smoke",
     "build:kafka-ui": "npm --workspace @eventra/kafka-ui run build",
     "dev:cache-loader": "npm --workspace @eventra/cache-loader run dev",

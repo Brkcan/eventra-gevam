@@ -1,0 +1,15 @@
+com/eventra/pluginrunner/api/JourneyActionPlugin.class
+com/eventra/pluginrunner/PluginRegistry.class
+com/eventra/pluginrunner/PluginRunnerApplication.class
+com/eventra/pluginrunner/actions/contactpolicy/service/ContactPolicyServiceResponse.class
+com/eventra/pluginrunner/api/PluginExecution.class
+com/eventra/pluginrunner/PluginRunnerApplication$1.class
+com/eventra/pluginrunner/actions/contactpolicy/service/ContactPolicyServiceClient$1.class
+com/eventra/pluginrunner/api/PluginResult.class
+com/eventra/pluginrunner/actions/contactpolicy/service/ContactPolicyClientConfig.class
+com/eventra/pluginrunner/actions/contactpolicy/model/ContactPolicyInput.class
+com/eventra/pluginrunner/actions/contactpolicy/model/ContactPolicyOutput.class
+com/eventra/pluginrunner/actions/contactpolicy/service/ContactPolicyServiceClient.class
+com/eventra/pluginrunner/actions/contactpolicy/ContactPolicyAction.class
+com/eventra/pluginrunner/actions/contactpolicy/mapper/ContactPolicyMapper.class
+com/eventra/pluginrunner/builtin/MockKafkaProducePlugin.class

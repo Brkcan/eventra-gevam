@@ -199,7 +199,8 @@ function normalizeNodeData(data = {}, fallbackId = '') {
     condition_event_type: data.condition_event_type || 'purchase',
     condition_segment_value: data.condition_segment_value || 'vip',
     channel: data.channel || 'email',
-    template_id: data.template_id || ''
+    template_id: data.template_id || '',
+    plugin_action_id: data.plugin_action_id || ''
   };
 }
 
@@ -586,8 +587,9 @@ function App() {
   const [showInspector, setShowInspector] = useState(false);
   const [showJourneyLogs, setShowJourneyLogs] = useState(false);
   const [showManualQueue, setShowManualQueue] = useState(false);
-  const [openDesignerGroup, setOpenDesignerGroup] = useState('view');
+  const [openDesignerGroup, setOpenDesignerGroup] = useState('');
   const [showNodePalette, setShowNodePalette] = useState(false);
+  const [showFieldBrowser, setShowFieldBrowser] = useState(false);
   const [journeyLogs, setJourneyLogs] = useState([]);
   const [journeyLogsLoading, setJourneyLogsLoading] = useState(false);
   const [journeyLogsWindowLabel, setJourneyLogsWindowLabel] = useState('Henuz yuklenmedi');
@@ -632,6 +634,7 @@ function App() {
   const [catalogueTemplates, setCatalogueTemplates] = useState([]);
   const [catalogueEndpoints, setCatalogueEndpoints] = useState([]);
   const [catalogueCacheDatasets, setCatalogueCacheDatasets] = useState([]);
+  const [pluginActionOptions, setPluginActionOptions] = useState([]);
   const appendCopilotHistory = useCallback((entry) => {
     setCopilotHistory((prev) =>
       [
@@ -794,6 +797,14 @@ function App() {
     () => nodes.filter((node) => normalizeNodeData(node.data, node.id).node_kind === 'http_call'),
     [nodes]
   );
+  const javaPluginActionNodes = useMemo(
+    () =>
+      nodes.filter((node) => {
+        const data = normalizeNodeData(node.data, node.id);
+        return data.node_kind === 'action' && data.channel === 'java_plugin';
+      }),
+    [nodes]
+  );
   const selectedBuilderDatasetColumns = useMemo(() => {
     const item = cacheDatasetMap.get(String(exprBuilderDatasetKey || ''));
     const cols = Array.isArray(item?.columns) ? item.columns : [];
@@ -852,13 +863,43 @@ function App() {
       ];
     });
 
+    const javaPluginItems = javaPluginActionNodes.flatMap((node) => {
+      const data = normalizeNodeData(node.data, node.id);
+      const label = String(data.label || node.id);
+      const plugin = pluginActionOptions.find(
+        (item) => String(item.id || '') === String(data.plugin_action_id || '')
+      );
+      const outputSchema = plugin?.output_schema;
+      const outputKeys =
+        outputSchema && typeof outputSchema === 'object' && !Array.isArray(outputSchema)
+          ? Object.keys(outputSchema).slice(0, 10)
+          : [];
+      if (outputKeys.length === 0) {
+        return [
+          {
+            label: `${label} / contact_allowed`,
+            path: 'context.java_plugin.output.contact_allowed'
+          },
+          {
+            label: `${label} / policy_reason`,
+            path: 'context.java_plugin.output.policy_reason'
+          }
+        ];
+      }
+      return outputKeys.map((key) => ({
+        label: `${label} / ${key}`,
+        path: `context.java_plugin.output.${key}`
+      }));
+    });
+
     return [
       { title: 'Event Verisi', items: payloadItems },
       { title: 'Musteri Verisi', items: attributeItems },
       { title: 'Cache Sonuclari', items: cacheItems },
-      { title: 'HTTP Sonuclari', items: httpItems }
+      { title: 'HTTP Sonuclari', items: httpItems },
+      { title: 'Java Plugin Ciktisi', items: javaPluginItems }
     ].filter((group) => group.items.length > 0);
-  }, [cacheDatasetMap, cacheLookupNodes, httpCallNodes]);
+  }, [cacheDatasetMap, cacheLookupNodes, httpCallNodes, javaPluginActionNodes, pluginActionOptions]);
   const selectedManualWaitNodeLabel = useMemo(() => {
     const matched = waitNodes.find((node) => node.id === manualWaitNodeId);
     if (!matched) {
@@ -1205,6 +1246,7 @@ function App() {
       setSelectedNodeId(null);
       setSelectedEdgeId(null);
       setViewMode('designer');
+      setOpenDesignerGroup('');
       setStatusText(`Yuklendi: ${journey.journey_id} v${journey.version}`);
     },
     [setEdges, setNodes]
@@ -2166,13 +2208,22 @@ function App() {
   const fetchCatalogues = useCallback(async () => {
     setCataloguesLoading(true);
     try {
-      const [summaryRes, eventTypesRes, segmentsRes, templatesRes, endpointsRes, cacheDatasetsRes] = await Promise.all([
+      const [
+        summaryRes,
+        eventTypesRes,
+        segmentsRes,
+        templatesRes,
+        endpointsRes,
+        cacheDatasetsRes,
+        pluginActionsRes
+      ] = await Promise.all([
         fetch(`${API_BASE_URL}/catalogues/summary`),
         fetch(`${API_BASE_URL}/catalogues/event-types?limit=200&offset=0`),
         fetch(`${API_BASE_URL}/catalogues/segments?limit=200&offset=0`),
         fetch(`${API_BASE_URL}/catalogues/templates?limit=200&offset=0`),
         fetch(`${API_BASE_URL}/catalogues/endpoints?limit=200&offset=0`),
-        fetch(`${API_BASE_URL}/catalogues/cache-datasets`)
+        fetch(`${API_BASE_URL}/catalogues/cache-datasets`),
+        fetch(`${API_BASE_URL}/plugin-actions`)
       ]);
 
       if (!summaryRes.ok) throw new Error(`Catalogue summary failed: ${summaryRes.status}`);
@@ -2182,13 +2233,22 @@ function App() {
       if (!endpointsRes.ok) throw new Error(`Endpoints failed: ${endpointsRes.status}`);
       if (!cacheDatasetsRes.ok) throw new Error(`Cache datasets failed: ${cacheDatasetsRes.status}`);
 
-      const [summaryBody, eventTypesBody, segmentsBody, templatesBody, endpointsBody, cacheDatasetsBody] = await Promise.all([
+      const [
+        summaryBody,
+        eventTypesBody,
+        segmentsBody,
+        templatesBody,
+        endpointsBody,
+        cacheDatasetsBody,
+        pluginActionsBody
+      ] = await Promise.all([
         summaryRes.json(),
         eventTypesRes.json(),
         segmentsRes.json(),
         templatesRes.json(),
         endpointsRes.json(),
-        cacheDatasetsRes.json()
+        cacheDatasetsRes.json(),
+        pluginActionsRes.ok ? pluginActionsRes.json() : Promise.resolve({ items: [] })
       ]);
 
       setCatalogueSummary(summaryBody.item || null);
@@ -2197,6 +2257,7 @@ function App() {
       setCatalogueTemplates(Array.isArray(templatesBody.items) ? templatesBody.items : []);
       setCatalogueEndpoints(Array.isArray(endpointsBody.items) ? endpointsBody.items : []);
       setCatalogueCacheDatasets(Array.isArray(cacheDatasetsBody.items) ? cacheDatasetsBody.items : []);
+      setPluginActionOptions(Array.isArray(pluginActionsBody.items) ? pluginActionsBody.items : []);
     } catch (error) {
       setStatusText(`Catalogues fetch hatasi: ${error.message}`);
     } finally {
@@ -2471,6 +2532,7 @@ function App() {
     setSelectedEdgeId(null);
     setSelectedJourneyKey('');
     setViewMode('designer');
+    setOpenDesignerGroup('');
     setStatusText('Yeni journey olusturuldu. Canvas bos, node ekleyerek baslayabilirsin.');
   }, [setEdges, setNodes]);
 
@@ -2961,63 +3023,6 @@ function App() {
       <div className={activeMenu === 'Scenarios' ? 'page pageScenarios' : 'page'}>
       {activeMenu === 'Scenarios' && viewMode === 'designer' && (
       <>
-      <section className="designerTop">
-        <div className="designerTitle">
-          <strong>{name}</strong>
-          <span>Workspace &gt; {selectedFolder} &gt; {journeyId} v{version}</span>
-          <span>
-            Approval: {approvalInfo?.state || 'none'}
-            {approvalInfo?.requested_at ? ` | Request: ${formatLogDate(approvalInfo.requested_at)}` : ''}
-            {approvalInfo?.reviewed_at ? ` | Review: ${formatLogDate(approvalInfo.reviewed_at)}` : ''}
-          </span>
-        </div>
-        <div className="designerActions">
-          <button type="button" onClick={() => setViewMode('library')} disabled={busy}>
-            Library
-          </button>
-          <button
-            type="button"
-            className={openDesignerGroup === 'view' ? 'active' : ''}
-            onClick={() => setOpenDesignerGroup((prev) => (prev === 'view' ? '' : 'view'))}
-            disabled={busy}
-          >
-            Gorunum
-          </button>
-          <button
-            type="button"
-            className={openDesignerGroup === 'journey' ? 'active' : ''}
-            onClick={() => setOpenDesignerGroup((prev) => (prev === 'journey' ? '' : 'journey'))}
-            disabled={busy}
-          >
-            Journey
-          </button>
-          <button
-            type="button"
-            className={openDesignerGroup === 'approval' ? 'active' : ''}
-            onClick={() => setOpenDesignerGroup((prev) => (prev === 'approval' ? '' : 'approval'))}
-            disabled={busy || approvalBusy}
-          >
-            Onay
-          </button>
-          <button
-            type="button"
-            className="primary"
-            onClick={() => saveJourney('published')}
-            disabled={busy || approvalInfo?.state !== 'approved'}
-          >
-            Publish
-          </button>
-          <button
-            type="button"
-            className={showCopilot ? 'copilotToggle active' : 'copilotToggle'}
-            onClick={() => setShowCopilot((prev) => !prev)}
-            disabled={busy}
-          >
-            AI Sor
-          </button>
-        </div>
-      </section>
-
       {openDesignerGroup === 'view' && (
       <section className="designerActionPanel">
         <button
@@ -3355,18 +3360,109 @@ function App() {
 
       <main className={showInspector ? 'workspace withInspector' : 'workspace noInspector'}>
         <section className="canvas">
+          <div className="canvasLeftTools">
+            <button
+              type="button"
+              className={`fieldBrowserTrigger ${showFieldBrowser ? 'open' : ''}`}
+              onClick={() => setShowFieldBrowser((prev) => !prev)}
+            >
+              <span className="fieldBrowserTriggerDot" />
+              <span className="fieldBrowserTriggerLabel">Alan Paneli</span>
+              <span className="fieldBrowserTriggerArrow">{showFieldBrowser ? '◀' : '▶'}</span>
+            </button>
+          </div>
+          <aside className={`canvasFieldBrowser ${showFieldBrowser ? 'open' : ''}`}>
+            <div className="canvasFieldBrowserHead">
+              <div className="canvasFieldBrowserTitleWrap">
+                <strong>Alan Paneli</strong>
+                <small>Expression icin kaynak alan sec</small>
+              </div>
+              <button type="button" onClick={() => setShowFieldBrowser(false)}>Kapat</button>
+            </div>
+            <div className="canvasFieldBrowserBody">
+              <div className="fieldBrowserSimpleGrid">
+                <button
+                  type="button"
+                  className={`fieldBrowserSimpleCard ${viewMode === 'library' ? 'active' : ''}`}
+                  onClick={() => setViewMode('library')}
+                  disabled={busy}
+                >
+                  <h4>Library</h4>
+                  <p>Journey kutuphanesine don ve senaryolari listele.</p>
+                </button>
+                <button
+                  type="button"
+                  className={`fieldBrowserSimpleCard ${openDesignerGroup === 'journey' ? 'active' : ''}`}
+                  onClick={() => {
+                    setOpenDesignerGroup((prev) => (prev === 'journey' ? '' : 'journey'));
+                  }}
+                  disabled={busy}
+                >
+                  <h4>Journey</h4>
+                  <p>Journey genel akisi ve adim bazli gezinim burada olacak.</p>
+                </button>
+                <button
+                  type="button"
+                  className={`fieldBrowserSimpleCard ${openDesignerGroup === 'view' ? 'active' : ''}`}
+                  onClick={() => {
+                    setOpenDesignerGroup((prev) => (prev === 'view' ? '' : 'view'));
+                  }}
+                  disabled={busy}
+                >
+                  <h4>Gorunum</h4>
+                  <p>Journey canvas gorunum ayarlari burada olacak.</p>
+                </button>
+                <button
+                  type="button"
+                  className={`fieldBrowserSimpleCard ${openDesignerGroup === 'approval' ? 'active' : ''}`}
+                  onClick={() => {
+                    setOpenDesignerGroup((prev) => (prev === 'approval' ? '' : 'approval'));
+                  }}
+                  disabled={busy || approvalBusy}
+                >
+                  <h4>Onay</h4>
+                  <p>Approval adimlari ve onay akisi burada olacak.</p>
+                </button>
+                <button
+                  type="button"
+                  className="fieldBrowserSimpleCard"
+                  onClick={() => {
+                    saveJourney('published');
+                  }}
+                  disabled={busy || approvalInfo?.state !== 'approved'}
+                >
+                  <h4>Publish</h4>
+                  <p>Yayinlama oncesi son kontroller burada olacak.</p>
+                </button>
+              </div>
+            </div>
+          </aside>
           <div className="canvasTools">
-            <button type="button" onClick={() => setShowNodePalette((prev) => !prev)}>
-              <span>+</span> {showNodePalette ? 'Hide Nodes' : 'Add Nodes'}
+            <button
+              type="button"
+              className="canvasPrimaryPill"
+              onClick={() => setShowNodePalette((prev) => !prev)}
+            >
+              {showNodePalette ? 'Hide Nodes' : 'Add Nodes'}
             </button>
             <button
               type="button"
+              className="canvasPrimaryPill"
+              title="AI Sor"
+              aria-label="AI Sor"
+              onClick={() => setShowCopilot((prev) => !prev)}
+            >
+              AI Sor
+            </button>
+            <button
+              type="button"
+              className="canvasPrimaryPill"
               title="Delete Selected"
               aria-label="Delete Selected"
               onClick={deleteSelected}
               disabled={!selectedNodeId && !selectedEdgeId}
             >
-              <span>X</span> Delete
+              Delete
             </button>
             {showNodePalette && (
               <div className="nodePalette">
@@ -3423,14 +3519,30 @@ function App() {
         </section>
         {showInspector && (
         <aside className="sidePanel">
-          <h2>
-            {selectedData
-              ? getNodeKindTitle(selectedData.node_kind)
-              : selectedEdge
-                ? 'Baglanti Ayarlari'
-                : 'Node Ayarlari'}
-          </h2>
-          {!selectedNode && !selectedEdge && <p className="panelHint">Akista bir node veya edge sec.</p>}
+          <div className="sidePanelHeader">
+            <div className="sidePanelTitleWrap">
+              <h2>
+                {selectedData
+                  ? getNodeKindTitle(selectedData.node_kind)
+                  : selectedEdge
+                    ? 'Baglanti Ayarlari'
+                    : 'Node Ayarlari'}
+              </h2>
+              <small>
+                {selectedNode
+                  ? `Node: ${selectedNode.id}`
+                  : selectedEdge
+                    ? `Edge: ${selectedEdge.id}`
+                    : 'Duzenlemek icin canvas uzerinden bir alan sec.'}
+              </small>
+            </div>
+          </div>
+          {!selectedNode && !selectedEdge && (
+            <div className="sidePanelEmptyState">
+              <strong>Duzenleme paneli hazir</strong>
+              <p>Akista bir node veya edge secerek ayarlarini burada gorebilirsin.</p>
+            </div>
+          )}
 
           {selectedNode && selectedData && (
             <div className="panelFields">
@@ -3440,34 +3552,25 @@ function App() {
                 <small className="fieldHelp">Teknik ID: <code>{selectedNode.id}</code></small>
               </div>
 
-              <label>
-                Adim Turu
-                <select
-                  value={selectedData.node_kind}
-                  onChange={(e) => {
-                    const nextKind = e.target.value;
-                    updateSelectedNode({
-                      node_kind: nextKind,
-                      label: defaultLabelForKind(nextKind)
-                    });
-                  }}
-                >
-                  <option value="trigger">trigger</option>
-                  <option value="wait">wait</option>
-                  <option value="cache_lookup">cache_lookup</option>
-                  <option value="http_call">http_call</option>
-                  <option value="condition">condition</option>
-                  <option value="action">action</option>
-                </select>
-              </label>
+              <div className="panelSection">
+                <div className="panelSectionTitle">Genel Ayarlar</div>
+                <div className="panelSectionHint">Node tipi sabittir; bu panelden sadece baslik ve node'a ozel alanlari duzenlersin.</div>
+                <label>
+                  Adim Turu
+                  <input value={selectedData.node_kind} readOnly />
+                  <small className="fieldHelp">
+                    Farkli tip gerekiyorsa yeni node ekleyip mevcut node ile degistir.
+                  </small>
+                </label>
 
-              <label>
-                Ekranda Gorunen Baslik
-                <input
-                  value={selectedData.label}
-                  onChange={(e) => updateSelectedNode({ label: e.target.value })}
-                />
-              </label>
+                <label>
+                  Ekranda Gorunen Baslik
+                  <input
+                    value={selectedData.label}
+                    onChange={(e) => updateSelectedNode({ label: e.target.value })}
+                  />
+                </label>
+              </div>
 
               {selectedData.node_kind === 'trigger' && (
                 <label>
@@ -3790,42 +3893,68 @@ function App() {
                       <option value="email">email</option>
                       <option value="sms">sms</option>
                       <option value="push">push</option>
+                      <option value="java_plugin">java_plugin</option>
                     </select>
                   </label>
 
-                  <label>
-                    Kullanilacak Template
-                    <select
-                      value={selectedData.template_id || ''}
-                      onChange={(e) => {
-                        const nextTemplateId = e.target.value;
-                        const matched = activeTemplateOptions.find(
-                          (item) => String(item.template_id) === String(nextTemplateId)
-                        );
-                        if (!matched) {
-                          updateSelectedNode({ template_id: nextTemplateId });
-                          return;
-                        }
-                        updateSelectedNode({
-                          template_id: nextTemplateId,
-                          channel: String(matched.channel || selectedData.channel || 'email')
-                        });
-                      }}
-                    >
-                      <option value="">Sec...</option>
-                      {activeTemplateOptions.map((item) => (
-                        <option key={item.template_id} value={item.template_id}>
-                          {item.template_id}
-                        </option>
-                      ))}
-                      {!activeTemplateOptions.some(
-                        (item) => String(item.template_id) === String(selectedData.template_id || '')
-                      ) &&
-                        selectedData.template_id && (
-                          <option value={selectedData.template_id}>{selectedData.template_id}</option>
-                        )}
-                    </select>
-                  </label>
+                  {selectedData.channel === 'java_plugin' ? (
+                    <>
+                      <label>
+                        Java Plugin Sinifi
+                        <select
+                          value={selectedData.plugin_action_id || ''}
+                          onChange={(e) => updateSelectedNode({ plugin_action_id: e.target.value })}
+                        >
+                          <option value="">Sec...</option>
+                          {pluginActionOptions.map((item) => (
+                            <option key={String(item.id)} value={String(item.id)}>
+                              {String(item.display_name || item.id)}
+                            </option>
+                          ))}
+                          {!pluginActionOptions.some(
+                            (item) => String(item.id || '') === String(selectedData.plugin_action_id || '')
+                          ) &&
+                            selectedData.plugin_action_id && (
+                              <option value={selectedData.plugin_action_id}>{selectedData.plugin_action_id}</option>
+                            )}
+                        </select>
+                      </label>
+                    </>
+                  ) : (
+                    <label>
+                      Kullanilacak Template
+                      <select
+                        value={selectedData.template_id || ''}
+                        onChange={(e) => {
+                          const nextTemplateId = e.target.value;
+                          const matched = activeTemplateOptions.find(
+                            (item) => String(item.template_id) === String(nextTemplateId)
+                          );
+                          if (!matched) {
+                            updateSelectedNode({ template_id: nextTemplateId });
+                            return;
+                          }
+                          updateSelectedNode({
+                            template_id: nextTemplateId,
+                            channel: String(matched.channel || selectedData.channel || 'email')
+                          });
+                        }}
+                      >
+                        <option value="">Sec...</option>
+                        {activeTemplateOptions.map((item) => (
+                          <option key={item.template_id} value={item.template_id}>
+                            {item.template_id}
+                          </option>
+                        ))}
+                        {!activeTemplateOptions.some(
+                          (item) => String(item.template_id) === String(selectedData.template_id || '')
+                        ) &&
+                          selectedData.template_id && (
+                            <option value={selectedData.template_id}>{selectedData.template_id}</option>
+                          )}
+                      </select>
+                    </label>
+                  )}
                 </>
               )}
             </div>
@@ -4443,6 +4572,9 @@ function App() {
                     <button type="button" className="conditionTokenChip" onClick={() => appendToSelectedEdgeExpression('external.http.response.message contains \"approved\"', 'replace')}>
                       Onay mesaji kontrolu
                     </button>
+                    <button type="button" className="conditionTokenChip" onClick={() => appendToSelectedEdgeExpression('context.java_plugin.output.contact_allowed == true', 'replace')}>
+                      Contact Policy = true
+                    </button>
                   </div>
                 </div>
               </div>
@@ -4507,18 +4639,25 @@ function App() {
                       >
                         <option value="payload">Event payload</option>
                         <option value="attributes">Musteri attribute</option>
+                        <option value="context">Instance context</option>
                         <option value="static">Sabit deger</option>
                       </select>
                     </label>
                     <label className="conditionStudioGridWide">
                       {exprBuilderValueType === 'static'
                         ? 'Sabit Deger'
-                        : `${exprBuilderValueType === 'payload' ? 'Payload' : 'Attribute'} Alani`}
+                        : exprBuilderValueType === 'payload'
+                          ? 'Payload Alani'
+                          : exprBuilderValueType === 'attributes'
+                            ? 'Attribute Alani'
+                            : 'Context Alani'}
                       <input
                         placeholder={
                           exprBuilderValueType === 'static'
                             ? '1000 veya approved'
-                            : exprBuilderColumn || 'amount'
+                            : exprBuilderValueType === 'context'
+                              ? 'java_plugin.output.contact_allowed'
+                              : exprBuilderColumn || 'amount'
                         }
                         value={exprBuilderValueInput}
                         onChange={(e) => setExprBuilderValueInput(e.target.value)}
